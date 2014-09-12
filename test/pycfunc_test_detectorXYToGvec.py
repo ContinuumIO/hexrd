@@ -41,30 +41,33 @@ def timed_run(fn, *args, **kwargs):
     t = timer()-t
     return (res, t)
 
+
 def check_results(got, expected):
     return (np.allclose(got[0][0], expected[0][0]) and
             np.allclose(got[0][1], expected[0][1]) and
             np.allclose(got[1], expected[1]))
 
 
-# ######################################################################
-# Calculate pixel coordinates
-#
 def run_test(N):
+    # ##################################################################
+    # Calculate pixel coordinates
+    #
     pvec  = 204.8 * np.linspace(-1, 1, N)
     dcrds = np.meshgrid(pvec, pvec)
-    XY    = np.ascontiguousarray(np.vstack([dcrds[0].flatten(), dcrds[1].flatten()]).T)
+    XY    = np.ascontiguousarray(np.vstack([dcrds[0].flatten(),
+                                            dcrds[1].flatten()]).T)
 
     # Check the timings
-    res_ref, t_ref = timed_run(xf.detectorXYToGvec, XY, rMat_d, rMat_s, tVec_d,
-                               tVec_s, tVec_c, beamVec=bVec_ref)
+    res_ref, t_ref = timed_run(xf.detectorXYToGvec, XY, rMat_d, rMat_s,
+                               tVec_d, tVec_s, tVec_c, beamVec=bVec_ref)
 
     res_ref = [res_ref[0], res_ref[1].T]
 
-    res_capi, t_capi = timed_run(xfcapi.detectorXYToGvec, XY, rMat_d, rMat_s,
-                       tVec_d.flatten(), tVec_s.flatten(), tVec_c.flatten(),
-                       beamVec=bVec_ref.flatten(),
-                       etaVec=np.array([1.0, 0.0, 0.0]))
+    res_capi, t_capi = timed_run(xfcapi.detectorXYToGvec, XY, rMat_d,
+                                 rMat_s, tVec_d.flatten(),
+                                 tVec_s.flatten(), tVec_c.flatten(),
+                                 beamVec=bVec_ref.flatten(),
+                                 etaVec=np.array([1.0, 0.0, 0.0]))
 
     #maxDiff_tTh = np.linalg.norm(tTh_d1-tTh_d3,np.inf)
     #print("Maximum disagreement in tTh:  %f"%maxDiff_tTh)
@@ -72,9 +75,6 @@ def run_test(N):
     #print("Maximum disagreement in eta:  %f"%maxDiff_eta)
     #maxDiff_gVec = np.linalg.norm(np.sqrt(np.sum(np.asarray(gVec1.T-gVec3)**2,1)),np.inf)
     #print("Maximum disagreement in gVec: %f"%maxDiff_gVec)
-
-    #print('cudadevice: ', numba.cuda.get_current_device().name)
-
 
     #setup for detectorXYToGVec
     rMat_e = np.zeros(9)
@@ -90,9 +90,11 @@ def run_test(N):
     gVec_l = np.zeros((npts, 3))
 
     _, t_cuda = timed_run(pycfuncs.detectorXYToGvec, XY, rMat_d, rMat_s,
-                          tVec_d.flatten(), tVec_s.flatten(), tVec_c.flatten(),
+                          tVec_d.flatten(), tVec_s.flatten(),
+                          tVec_c.flatten(),
                           bVec_ref.flatten(),np.array([1.0,0.0,0.0]),
-                          rMat_e, bVec, tVec1, tVec2, dHat_l, n_g, npts, tTh, eta, gVec_l)
+                          rMat_e, bVec, tVec1, tVec2, dHat_l, n_g, npts,
+                          tTh, eta, gVec_l)
 
     res_cuda = [[tTh, eta], gVec_l]
     #maxDiff_tTh = np.linalg.norm(tTh_d3 - tTh_d4,np.inf)
@@ -119,6 +121,10 @@ if __name__ == '__main__':
     if not args:
         args = [ 512, 1024, 2048, 4096 ]
 
+
+    cuda_str = 'CUDA({0})'.format(numba.cuda.get_current_device().name)
+    headers = ['SIZE', 'HEXRD', 'CAPI', cuda_str]
+    print(', '.join('{0:>10}'.format(x) for x in headers))
 
     for i in args:
         try:
