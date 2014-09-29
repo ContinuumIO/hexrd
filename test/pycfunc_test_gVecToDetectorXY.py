@@ -7,6 +7,7 @@ from hexrd.xrd import transforms as xf
 from hexrd.xrd import transforms_CAPI as xfcapi
 from hexrd.xrd import pycfuncs_transforms as pycfuncs
 import numba.cuda
+from numbapro import nvtx
 
 #input parameters
 bVec_ref = xf.bVec_ref
@@ -33,17 +34,17 @@ tVec_c = np.array( [ [ 0.07547626],
 
 rMat_s = xf.makeOscillRotMat([chi, 0.])
 
-def timed_run(fn, *args, **kwargs):
+def timed_run(name, fn, *args, **kwargs):
     t = timer()
-    res = fn(*args,**kwargs)
+    with nvtx.profile_range(name):
+        res = fn(*args,**kwargs)
     t = timer()-t
     return (res, t)
 
 
-def run_test(N):
+def run_test(N, experiments):
     # ######################################################################
     # Calculate pixel coordinates
-
 
     pvec  = 204.8 * np.linspace(-1, 1, N)
 
@@ -61,55 +62,76 @@ def run_test(N):
     gVec_c1 = np.dot(rMat_c.T, np.dot(rMat_s.T,gVec_l1))
     gVec_c2 = np.ascontiguousarray(np.dot(rMat_c.T, np.dot(rMat_s.T, gVec_l2.T)).T)
 
-    res_ref, t_ref = timed_run(xf.gvecToDetectorXY, gVec_c1, rMat_d, rMat_s,
-                               rMat_c, tVec_d, tVec_s, tVec_c, beamVec=bVec_ref)
+    time_deltas = []
 
-    res_capi, t_capi = timed_run(xfcapi.gvecToDetectorXY, gVec_c2, rMat_d,
-                                 rMat_s, rMat_c, tVec_d, tVec_s, tVec_c,
-                                 beamVec=bVec_ref)
+    if 'python' in experiments:
+        res_ref, t = timed_run('python', xf.gvecToDetectorXY, gVec_c1, rMat_d,
+                               rMat_s, rMat_c, tVec_d, tVec_s, tVec_c,
+                               beamVec=bVec_ref)
+        time_deltas.append(t)
+    else:
+        res_ref = None
+
+    if 'capi' in experiments:
+        res_capi, t = timed_run('capi', xfcapi.gvecToDetectorXY, gVec_c2,
+                                rMat_d, rMat_s, rMat_c, tVec_d, tVec_s, tVec_c,
+                                beamVec=bVec_ref)
+        time_deltas.append(t)
+    else:
+        res_ref = None
 
     # setup or numba version
     # should be able to run in nopython mode
-    bHat_l = np.zeros(3)
-    nVec_l = np.zeros(3)
-    P0_l = np.zeros(3)
-    P2_l = np.zeros(3)
-    P2_d = np.zeros(3)
-    P3_l = np.zeros(3)
-    gHat_c = np.zeros(3)
-    gVec_l = np.zeros(3)
-    dVec_l = np.zeros(3)
-    rMat_sc = np.zeros(9)
-    brMat = np.zeros(9)
-    result = np.empty((gVec_c2.shape[0], 3))
-    bVec_ref_flat = bVec_ref.flatten()
+    if 'cuda' in experiments:
+        bHat_l = np.zeros(3)
+        nVec_l = np.zeros(3)
+        P0_l = np.zeros(3)
+        P2_l = np.zeros(3)
+        P2_d = np.zeros(3)
+        P3_l = np.zeros(3)
+        gHat_c = np.zeros(3)
+        gVec_l = np.zeros(3)
+        dVec_l = np.zeros(3)
+        rMat_sc = np.zeros(9)
+        brMat = np.zeros(9)
+        result = np.empty((gVec_c2.shape[0], 3))
+        bVec_ref_flat = bVec_ref.flatten()
 
-    _, t_cuda = timed_run(pycfuncs.gvecToDetectorXY, gVec_c2, rMat_d, rMat_s,
-                          rMat_c, tVec_d, tVec_s, tVec_c, bVec_ref_flat, bHat_l,
-                          nVec_l, P0_l, P2_l, P2_d, P3_l, gHat_c, gVec_l,
-                          dVec_l, rMat_sc, brMat, result)
-    res_cuda = result[:, 0:2]
+        _, t = timed_run('cuda numba', pycfuncs.gvecToDetectorXY, gVec_c2,
+                         rMat_d, rMat_s, rMat_c, tVec_d, tVec_s, tVec_c,
+                         bVec_ref_flat, bHat_l, nVec_l, P0_l, P2_l, P2_d,
+                         P3_l, gHat_c, gVec_l, dVec_l, rMat_sc, brMat, result)
+        res_cuda = result[:, 0:2]
+        time_deltas.append(t)
+    else:
+        res_cuda = None
 
-    assert np.allclose(res_ref, res_capi)
-    assert np.allclose(res_ref, res_cuda)
+    if res_ref is not None:
+        if res_capi is not None:
+            assert np.allclose(res_ref, res_capi)
+        if res_cuda is not None:
+            assert np.allclose(res_ref, res_cuda)
 
-    return t_ref, t_capi, t_cuda
+    return time_deltas
 
 
 if __name__ == '__main__':
     import sys, getopt
     try:
-        _, args = getopt.getopt(sys.argv[1:], '')
+        opts, args = getopt.getopt(sys.argv[1:], 'pac')
 
     except getopt.GetoptError:
         print('{0} <list of sizes>'.format(sys.argv[0]))
         sys.exit(2)
 
+    translate_opt = { '-p':'python', '-a':'capi', '-c':'cuda' }
+    experiments = set(translate_opt[o] for o, _ in opts)
+
     if not args:
         args = [ 512, 1024, 2048, 4096 ]
 
-    cuda_str = 'CUDA({0})'.format(numba.cuda.get_current_device().name)
-    headers = ['SIZE', 'HEXRD', 'CAPI', cuda_str]
+    headers = ['size']
+    headers.extend(experiments)
     print(', '.join('{0:>10}'.format(x) for x in headers))
 
     for i in args:
@@ -122,6 +144,6 @@ if __name__ == '__main__':
             print('Ignoring argument {0}: not a valid size'.format(i))
             continue
 
-        res = run_test(sz)
+        res = run_test(sz, experiments)
         res_str = ', '.join(['{:10d}'.format(sz)] + ['{:10.6f}'.format(x) for x in res])
         print(res_str)
