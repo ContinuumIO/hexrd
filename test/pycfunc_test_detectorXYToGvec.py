@@ -9,6 +9,7 @@ from hexrd.xrd import transforms_CAPI as xfcapi
 from hexrd.xrd import pycfuncs_transforms as pycfuncs
 
 import numba.cuda
+from numbapro import nvtx
 
 # input parameters
 bVec_ref = xf.bVec_ref
@@ -35,9 +36,10 @@ tVec_c = np.array( [ [ 0.07547626],
 rMat_s = xf.makeOscillRotMat([chi, 0.])
 
 
-def timed_run(fn, *args, **kwargs):
+def timed_run(name, color, fn, *args, **kwargs):
     t = timer()
-    res = fn(*args,**kwargs)
+    with nvtx.profile_range(name, color=color):
+        res = fn(*args,**kwargs)
     t = timer()-t
     return (res, t)
 
@@ -58,12 +60,14 @@ def run_test(N):
                                             dcrds[1].flatten()]).T)
 
     # Check the timings
-    res_ref, t_ref = timed_run(xf.detectorXYToGvec, XY, rMat_d, rMat_s,
+    res_ref, t_ref = timed_run('python', nvtx.colors.blue,
+                               xf.detectorXYToGvec, XY, rMat_d, rMat_s,
                                tVec_d, tVec_s, tVec_c, beamVec=bVec_ref)
 
     res_ref = [res_ref[0], res_ref[1].T]
 
-    res_capi, t_capi = timed_run(xfcapi.detectorXYToGvec, XY, rMat_d,
+    res_capi, t_capi = timed_run('capi', nvtx.colors.green,
+                                 xfcapi.detectorXYToGvec, XY, rMat_d,
                                  rMat_s, tVec_d.flatten(),
                                  tVec_s.flatten(), tVec_c.flatten(),
                                  beamVec=bVec_ref.flatten(),
@@ -89,7 +93,8 @@ def run_test(N):
     eta = np.zeros(npts)
     gVec_l = np.zeros((npts, 3))
 
-    _, t_cuda = timed_run(pycfuncs.detectorXYToGvec, XY, rMat_d, rMat_s,
+    _, t_cuda = timed_run('cuda numba', nvtx.colors.red,
+                          pycfuncs.detectorXYToGvec, XY, rMat_d, rMat_s,
                           tVec_d.flatten(), tVec_s.flatten(),
                           tVec_c.flatten(),
                           bVec_ref.flatten(),np.array([1.0,0.0,0.0]),
