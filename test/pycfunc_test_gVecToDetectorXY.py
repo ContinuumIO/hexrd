@@ -34,12 +34,14 @@ tVec_c = np.array( [ [ 0.07547626],
 
 rMat_s = xf.makeOscillRotMat([chi, 0.])
 
-def timed_run(name, fn, *args, **kwargs):
-    t = timer()
-    with nvtx.profile_range(name):
-        res = fn(*args,**kwargs)
-    t = timer()-t
-    return (res, t)
+def timed_run(fn, name, color):
+    def _runner(*args, **kwargs):
+        t = timer()
+        with nvtx.profile_range(name, color=color):
+            res = fn(*args,**kwargs)
+        t = timer()-t
+        return (res, t)
+    return _runner
 
 
 def run_test(N, experiments):
@@ -65,17 +67,21 @@ def run_test(N, experiments):
     time_deltas = []
 
     if 'python' in experiments:
-        res_ref, t = timed_run('python', xf.gvecToDetectorXY, gVec_c1, rMat_d,
-                               rMat_s, rMat_c, tVec_d, tVec_s, tVec_c,
-                               beamVec=bVec_ref)
+        xf_gvecToDetector = timed_run(xf.gvecToDetectorXY,
+                                      'python', nvtx.colors.blue)
+        res_ref, t = xf_gvecToDetectorXY(gVec_c1, rMat_d, rMat_s, rMat_c,
+                                         tVec_d, tVec_s, tVec_c,
+                                         beamVec=bVec_ref)
         time_deltas.append(t)
     else:
         res_ref = None
 
     if 'capi' in experiments:
-        res_capi, t = timed_run('capi', xfcapi.gvecToDetectorXY, gVec_c2,
-                                rMat_d, rMat_s, rMat_c, tVec_d, tVec_s, tVec_c,
-                                beamVec=bVec_ref)
+        xfcapi_gvecToDetectorXY = timed_run(xfcapi.gvecToDetectorXY,
+                                            'capi', nvtx.colors.green)
+        res_capi, t = xfcapi_gvecToDetectorXY(gVec_c2, rMat_d, rMat_s, rMat_c,
+                                              tVec_d, tVec_s, tVec_c,
+                                              beamVec=bVec_ref)
         time_deltas.append(t)
     else:
         res_ref = None
@@ -97,10 +103,13 @@ def run_test(N, experiments):
         result = np.empty((gVec_c2.shape[0], 3))
         bVec_ref_flat = bVec_ref.flatten()
 
-        _, t = timed_run('cuda numba', pycfuncs.gvecToDetectorXY, gVec_c2,
-                         rMat_d, rMat_s, rMat_c, tVec_d, tVec_s, tVec_c,
-                         bVec_ref_flat, bHat_l, nVec_l, P0_l, P2_l, P2_d,
-                         P3_l, gHat_c, gVec_l, dVec_l, rMat_sc, brMat, result)
+        pycfuncs_gvecToDetectorXY = timed_run(pycfuncs.gvecToDetectorXY,
+                                              'cuda numba', nvtx.colors.red)
+        _, t = pycfuncs_gvecToDetectorXY(gVec_c2, rMat_d, rMat_s, rMat_c, 
+                                         tVec_d, tVec_s, tVec_c,
+                                         bVec_ref_flat, bHat_l, nVec_l, P0_l,
+                                         P2_l, P2_d, P3_l, gHat_c, gVec_l,
+                                         dVec_l, rMat_sc, brMat, result)
         res_cuda = result[:, 0:2]
         time_deltas.append(t)
     else:
