@@ -62,6 +62,7 @@ def to_human_size_string(nbytes):
 def run_test(experiments, N, array_mult=1):
     hkls_ = np.concatenate([hkls]*array_mult)
 
+    time_deltas = []
     if 'python' in experiments:
         hklsT_ = np.concatenate([hklsT]*array_mult, axis=1)
         xf_oscillAnglesOfHKLs = timed_run(N, xf.oscillAnglesOfHKLs,
@@ -70,8 +71,9 @@ def run_test(experiments, N, array_mult=1):
                                                wavelength, beamVec=bVec_ref,
                                                etaVec=eta_ref)
         res_ref = (res_ref[0].T, res_ref[1].T)
+        time_deltas.append(t_ref)
     else:
-        res_ref, t_ref = None, None
+        res_ref = None
 
 
     if 'capi' in experiments:
@@ -80,8 +82,9 @@ def run_test(experiments, N, array_mult=1):
         res_capi, t_capi = xfcapi_oscillAnglesOfHKLs(hkls_, chi, rMat_c, bMat,
                                                      wavelength, beamVec=bVec_ref,
                                                      etaVec=eta_ref)
+        time_deltas.append(t_capi)
     else:
-        res_capi, t_capi = None, None
+        res_capi = None
 
     if 'cuda' in experiments:
         gVec_e = np.zeros(3)
@@ -105,8 +108,9 @@ def run_test(experiments, N, array_mult=1):
                                                 eHat_l, oVec, tVec0, rMat_e,
                                                 rMat_s, npts, oangs0, oangs1)
         res_cuda = (oangs0, oangs1)
+        time_deltas.append(t_cuda)
     else:
-        res_cuda, t_cuda = None, None
+        res_cuda = None
 
     if res_ref is not None:
         if res_capi is not None:
@@ -114,7 +118,7 @@ def run_test(experiments, N, array_mult=1):
         if res_cuda is not None:
             assert check_results(res_ref, res_cuda)
 
-    return t_ref, t_capi, t_cuda
+    return time_deltas
 
 
 if __name__ == '__main__':
@@ -149,7 +153,5 @@ if __name__ == '__main__':
         res = run_test(experiments, 22, array_mult=sz)
         sz_in_bytes = sz * hkls.nbytes
         res_str = ', '.join(['{:>10s}'.format(to_human_size_string(sz_in_bytes))] + 
-                            ['{:>10s}'.format('not ran') 
-                             if x is None else '{:10.6f}'.format(x)
-                             for x in res])
+                            ['{:10.6f}'.format(x) for x in res])
         print(res_str)
