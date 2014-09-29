@@ -33,6 +33,7 @@ from hexrd.xrd import _transforms_CAPI
 from numpy import float_ as nFloat
 from numpy import int_ as nInt
 from numbapro import vectorize, jit, autojit, guvectorize, njit, cuda, float64, int64 
+from numbapro import nvtx
 import math
 
 # ######################################################################
@@ -525,6 +526,8 @@ def nb_rotate_vecs_about_axis_cfunc(na, angles, nax, axes, nv, vecs, rVecs, row)
             rVecs[row, j] = c * vecs[3 * i + j] + (s / nrm) * aCrossV[j] + (1.0 - c) * proj * axes[sax * i + j] / (nrm * nrm)
 
 
+
+@nvtx.profiled('detectorXYToGvec', color=nvtx.colors.cyan)
 def detectorXYToGvec(xy_det,
                      rMat_d, rMat_s,
                      tVec_d, tVec_s, tVec_c,
@@ -601,25 +604,44 @@ def detectorXYToGvec(xy_det,
     # cpu  
     #detector_core_loop(xy_det, rMat_d, rMat_e, bVec, tVec1, npts, tTh, eta, gVec_l)
 
+@nvtx.profiled('gpu_detector_core_loop', color=nvtx.colors.yellow)
 def gpu_detector_core_loop(xy_det, rMat_d,  
         rMat_e, bVec, tVec1, tTh, eta, gVec_l):
 
-    dev_xy_det = cuda.to_device(xy_det)
-    dev_rMat_d = cuda.to_device(rMat_d)
-    dev_rMat_e = cuda.to_device(rMat_e)
-    dev_bVec = cuda.to_device(bVec)
-    dev_tVec1 = cuda.to_device(tVec1)
-    dev_tTh = cuda.to_device(tTh)
-    dev_eta = cuda.to_device(eta)
-    dev_gVec_l = cuda.to_device(gVec_l)
-      
-    gpu_detector_core_loop_kernel.forall(xy_det.shape[0])(dev_xy_det, dev_rMat_d, dev_rMat_e, dev_bVec, dev_tVec1, dev_tTh, dev_eta, dev_gVec_l)
+    with nvtx.profile_range('create stream', color=nvtx.colors.red):
+        stream = cuda.stream()
+        
+    with stream.auto_synchronize():
+        with nvtx.profile_range('setup', color=nvtx.colors.blue):
+            with nvtx.profile_range('xy_det', color=nvtx.colors.black):
+                dev_xy_det = cuda.to_device(xy_det, stream)
+            with nvtx.profile_range('rMat_d', color=nvtx.colors.red):
+                dev_rMat_d = cuda.to_device(rMat_d, stream)
+            with nvtx.profile_range('rMat_e', color=nvtx.colors.yellow):
+                dev_rMat_e = cuda.to_device(rMat_e, stream)
+            with nvtx.profile_range('bVec', color=nvtx.colors.blue):
+                dev_bVec = cuda.to_device(bVec, stream)
+            with nvtx.profile_range('tVec1', color=nvtx.colors.magenta):
+                dev_tVec1 = cuda.to_device(tVec1, stream)
+            with nvtx.profile_range('tTh', color=nvtx.colors.green):
+                dev_tTh = cuda.to_device(tTh, stream)
+            with nvtx.profile_range('eta', color=nvtx.colors.white):
+                dev_eta = cuda.to_device(eta, stream)
+            with nvtx.profile_range('l', color=nvtx.colors.cyan):
+                dev_gVec_l = cuda.to_device(gVec_l, stream)
 
-    dev_tTh.copy_to_host(ary=tTh)
-    dev_eta.copy_to_host(ary=eta)
-    dev_gVec_l.copy_to_host(ary=gVec_l)
+        with nvtx.profile_range('run', color=nvtx.colors.red):
+            gpu_detector_core_loop_kernel.forall(xy_det.shape[0], stream=stream)(dev_xy_det, dev_rMat_d, dev_rMat_e, dev_bVec, dev_tVec1, dev_tTh, dev_eta, dev_gVec_l)
 
- 
+        with nvtx.profile_range('retrieve results', color=nvtx.colors.green):
+            with nvtx.profile_range('tTh', color=nvtx.colors.blue):
+                dev_tTh.copy_to_host(ary=tTh, stream=stream)
+            with nvtx.profile_range('eta', color=nvtx.colors.red):
+                dev_eta.copy_to_host(ary=eta, stream=stream)
+            with nvtx.profile_range('gVec_l', color=nvtx.colors.green):
+                dev_gVec_l.copy_to_host(ary=gVec_l, stream=stream)
+
+
 @cuda.jit("float64[:,:], float64[:,:], float64[:], float64[:], float64[:], "
         "float64[:], float64[:], float64[:,:]")
 def gpu_detector_core_loop_kernel(xy_det, rMat_d,

@@ -11,6 +11,13 @@ from hexrd.xrd import pycfuncs_transforms as pycfuncs
 import numba.cuda
 from numbapro import nvtx
 
+# monkey patch some numba cuda functions so they are profiled
+from numba.cuda.cudadrv.devicearray import DeviceNDArrayBase
+
+DeviceNDArrayBase.copy_to_device = nvtx.profiled('copy_to_device')(DeviceNDArrayBase.copy_to_device)
+DeviceNDArrayBase.copy_to_host = nvtx.profiled('copy_to_host')(DeviceNDArrayBase.copy_to_host)
+
+
 # input parameters
 bVec_ref = xf.bVec_ref
 
