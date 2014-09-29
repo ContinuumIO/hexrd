@@ -84,7 +84,7 @@ def run_test(N, experiments):
                                               beamVec=bVec_ref)
         time_deltas.append(t)
     else:
-        res_ref = None
+        res_capi = None
 
     # setup or numba version
     # should be able to run in nopython mode
