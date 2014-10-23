@@ -10,7 +10,7 @@ import functools
 from contextlib import contextmanager
 import numpy as np
 
-def add_nvtx_instrumentation(nvtx, refinement=1):
+def add_nvtx_instrumentation(nvtx, refinement=2):
     from scipy import sparse
     from scipy import ndimage
     from scipy import optimize
@@ -59,8 +59,9 @@ def add_nvtx_instrumentation(nvtx, refinement=1):
     PROFILE('detector.ReadGE.read', nvtx.colors.cyan)
 
     # some key functions
-    PROFILE('numpy.meshgrid', nvtx.colors.red)
-    PROFILE('numpy.arange', nvtx.colors.red)
+    PROFILE('numpy.meshgrid', nvtx.colors.cyan)
+    PROFILE('numpy.arange', nvtx.colors.cyan)
+    PROFILE('numpy.zeros', nvtx.colors.cyan)
     PROFILE('xrdutil.simulateGVecs', nvtx.colors.yellow)
     PROFILE('xrdutil._coo_build_window', nvtx.colors.yellow)
     PROFILE('fitting.objFuncFitGrain', nvtx.colors.magenta)
@@ -72,6 +73,7 @@ def add_nvtx_instrumentation(nvtx, refinement=1):
     PROFILE('gridutil.cellCentroids', nvtx.colors.red)
     PROFILE('gridutil.cellConnectivity', nvtx.colors.red)
     PROFILE('ndimage.label', nvtx.colors.white)
+    PROFILE('ndimage.center_of_mass', nvtx.colors.white)
     PROFILE('distortion._ge_41rt_distortion', nvtx.colors.yellow)
     PROFILE('distortion._ge_41rt_inverse_distortion', nvtx.colors.yellow)
     PROFILE('xfcapi.makeDetectorRotMat', nvtx.colors.blue)
