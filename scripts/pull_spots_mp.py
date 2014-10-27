@@ -26,7 +26,9 @@ from hexrd.xrd import transforms as xf
 from hexrd.xrd import transforms_CAPI as xfcapi
 
 from hexrd.xrd.detector import ReadGE
-import numba
+from hexrd.config import USE_NUMBA
+if USE_NUMBA:
+    import numba
 
 try:
     from progressbar import ProgressBar, Bar, ETA, Percentage
@@ -126,21 +128,44 @@ gScl  = np.array([1., 1., 1.,
                   1., 1., 1., 0.01, 0.01, 0.01])
 
 
-@numba.njit
-def extract_ijv(in_array, threshold, out_i, out_j, out_v):
-    n = 0
-    w, h = in_array.shape
+if USE_NUMBA:
+    @numba.njit
+    def extract_ijv(in_array, threshold, out_i, out_j, out_v):
+        n = 0
+        w, h = in_array.shape
 
-    for i in range(w):
-        for j in range(h):
-            v = in_array[i,j]
-            if v > threshold:
-                out_v[n] = v
-                out_i[n] = i
-                out_j[n] = j
-                n += 1
+        for i in range(w):
+            for j in range(h):
+                v = in_array[i,j]
+                if v > threshold:
+                    out_v[n] = v
+                    out_i[n] = i
+                    out_j[n] = j
+                    n += 1
 
-    return n
+        return n
+
+    class CooMatrixBuilder(object):
+        def __init__(self):
+            self.v_buff = np.empty((2048*2048,), dtype=np.int16)
+            self.i_buff = np.empty((2048*2048,), dtype=np.int16)
+            self.j_buff = np.empty((2048*2048,), dtype=np.int16)
+
+        def build_matrix(self, frame, threshold):
+            count = extract_ijv(frame, threshold, 
+                                self.i_buff, self.j_buff, self.v_buff)
+            return sparse.coo_matrix((self.v_buff[0:count].copy(),
+                                      (self.i_buff[0:count].copy(),
+                                       self.j_buff[0:count].copy())),
+                                     shape=frame.shape)
+
+else: # not USE_NUMBA        
+    class CooMatrixBuilder(object):
+        def build_matrix(self, frame, threshold):
+            mask = frame > threshold
+            return sparse.coo_matrix((frame[mask], mask.nonzero()),
+                                     shape=frame.shape)
+
 
 def read_frames(reader, cfg):
     start = time.time()                      # time this
@@ -153,16 +178,10 @@ def read_frames(reader, cfg):
     nframes = reader.getNFrames()
     print "Reading %d frames:" % nframes
     pbar = ProgressBar(widgets=[Percentage(), Bar(), ETA()], maxval=nframes).start()
-    v_buff = np.empty((2048*2048,), dtype=np.int16)
-    i_buff = np.empty((2048*2048,), dtype=np.int16)
-    j_buff = np.empty((2048*2048,), dtype=np.int16)
+    coo_builder = CooMatrixBuilder()
     for i in range(nframes):
         frame = reader.read()
-        count = extract_ijv(frame, threshold, i_buff, j_buff, v_buff)
-        sparse_frame= sparse.coo_matrix((v_buff[0:count].copy(),
-                                         (i_buff[0:count].copy(), j_buff[0:count].copy())),
-                                         shape=frame.shape)
-        frame_list.append(sparse_frame)
+        frame_list.append(coo_builder.build_matrix(frame, threshold))
         pbar.update(i+1)
     pbar.finish()
     # frame_list = np.array(frame_list)
