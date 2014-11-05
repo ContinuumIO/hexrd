@@ -1,26 +1,25 @@
-## working directory defaults to current working directory in terminal
-working_dir: /home/jbernier/gao-56-1
-analysis_name: multiruby
+analysis_name: multiruby # defaults to analysis
 
 ## working directory defaults to current working directory
+## all relative paths specified herein are assumed to be in the working_dir
+## any files not in working_dir should be specified with an absolute path
 working_dir: /nfs/chess/aux/user/afrl/2014-3/multiruby
 
 #multiprocessing: 1 # "all", or "half", or -1 means all but one, defaults to -1
 
 material:
   definitions: materials.cpl
-  active: rene88
+  active: ruby
 
 image_series:
-  directory: /nfs/chess/raw/2014-3/f2/gao-56-1/val001/5/ff
   file:
-    stem: ff_%05d.ge2
-    ids: [36, 37, 38]
+    stem: 1/ff/ff_%05d.ge2 # can include relative or absolute path
+    ids: [24, 25, 26, 27, 28, 29] # or can use globs: ["*2[4-9]"]
   images:
     start: 0
     #stop: -1
     #step: 1
-  ome:
+  omega:
     start: 0.0
     step: 0.25
   #dark: ~
@@ -29,19 +28,20 @@ image_series:
 detector:
   parameters_old: CeO2.par # the old detector spec, produced by the GUI
   parameters: CeO2.yml
-  pixels:
+  pixels: # this section required to convert from old detector spec
     rows: 2048
     columns: 2048
-    size: [0.200, 0.200] # [row height, col widt] mm
+    size: [0.200, 0.200] # [row height, col width] mm
 
 find_orientations:
   orientation_maps:
     # A file name must be specified. If it doesn't exist, one will be created
-    file: some/file/name.cpl
+    file: eta-omega.cpl
+
     threshold: 1850
     #bin_frames: 1 # defaults to 1
 
-    ## list of hkl orders used to find orientations
+    ## "all", or a list of hkl orders used to find orientations
     ## defaults to all orders listed in the material definition
     #active_hkls: [0,1,2,3]
 
@@ -54,8 +54,12 @@ find_orientations:
 
   #threshold: 10 # defaults to 1
 
-  #ome:
+  #omega:
   #  tolerance: 0.5 # in degrees, defaults to 2x ome step
+
+  ## specify the branch cut, in degrees. The range must be 360 degrees.
+  ## defaults to ["image_series:omega:start", "image_series:omega:start"+-360]
+  ## depending on sign of "image_series:omega:step"
   #  period: [0, 360] # in degrees, defaults to full 360 starting at "ome start"
 
   #eta:
@@ -69,18 +73,18 @@ find_orientations:
 
   #extract_measured_g_vectors: true # defaults to false
 
-extract_grains:
-  threshold: 1850
-
-  tth_max: 15 # true, false, or a non-negative value, defaults to true
-
-  panel_buffer: 10 # don't fit spots within this many pixels from edge
+fit_grains:
+  #do_fit: false # if false, extracts grains but doesn't fit. defaults to true
 
   #npdiv: 1 # number of polar pixel grid subdivisions, defaults to 2
 
-  fit_grains: true
+  panel_buffer: 10 # don't fit spots within this many pixels from edge
+
+  threshold: 1850
 
   tolerance:
     tth: [0.2, 0.1] # tolerance lists must be identical length
     eta: [2.0, 2.0]
-    ome: [1.0, 1.0]
+    omega: [1.0, 1.0]
+
+  tth_max: 15 # true, false, or a non-negative value, defaults to true

@@ -1,6 +1,7 @@
 import collections
 from ConfigParser import SafeConfigParser
 import copy
+import logging
 import os
 import sys
 import time
@@ -14,20 +15,14 @@ from scipy.linalg import solve
 import yaml
 
 from hexrd.xrd import experiment as expt
-from hexrd.xrd import transforms as xf
+from hexrd.xrd.transforms import makeDetectorRotMat, unitVector, vInv_ref
 from hexrd.xrd import transforms_CAPI as xfcapi
 
 from hexrd.xrd.detector import ReadGE
 
 
-# #################################################
-# PARAMETERS
-d2r = np.pi/180.
-r2d = 180./np.pi
+logger = logging.getLogger('hexrd')
 
-bVec_ref = xf.bVec_ref
-vInv_ref = xf.vInv_ref
-# #################################################
 
 # #################################################
 # LEGACY FUCTIONS FOR WORKING WITH OLD HEXRD PAR
@@ -37,7 +32,7 @@ def tVec_d_from_old_detector_params(old_par, det_origin):
 
     as loaded the params have 2 columns: [val, bool]
     """
-    rMat_d = xf.makeDetectorRotMat(old_par[3:6, 0])
+    rMat_d = makeDetectorRotMat(old_par[3:6, 0])
     #
     P2_d   = np.c_[ old_par[0, 0] - det_origin[0],
                     old_par[1, 0] - det_origin[1],
@@ -53,20 +48,24 @@ def old_detector_params_from_new(new_par, det_origin):
 
     *) may need to consider distortion...
     """
-    rMat_d = xf.makeDetectorRotMat(new_par[:3])
+    rMat_d = makeDetectorRotMat(new_par[:3])
     tVec_d = new_par[3:6].reshape(3, 1)
-    #
+
     A = np.eye(3); A[:, :2] = rMat_d[:, :2]
-    #
+
     return solve(A, -tVec_d) + np.vstack([det_origin[0], det_origin[1], 0])
 
-def make_old_detector_parfile(results, det_origin=(204.8, 204.8), filename=None):
+def make_old_detector_parfile(
+    results, det_origin=(204.8, 204.8), filename=None
+    ):
     tiltAngles = np.array(results['tiltAngles'])
-    rMat_d     = xf.makeDetectorRotMat(tiltAngles)
+    rMat_d     = makeDetectorRotMat(tiltAngles)
     tVec_d     = results['tVec_d'] - results['tVec_s']
-    #
-    beamXYD = old_detector_params_from_new(np.hstack([tiltAngles.flatten(), tVec_d.flatten()]), det_origin)
-    #
+
+    beamXYD = old_detector_params_from_new(
+        np.hstack([tiltAngles.flatten(), tVec_d.flatten()]), det_origin
+        )
+
     det_plist = np.zeros(12)
     det_plist[:3]  = beamXYD.flatten()
     det_plist[3:6] = tiltAngles
@@ -96,7 +95,9 @@ def migrate_detector_config(old_par, nrows, ncols, pixel_size,
     det_origin = 0.5 * np.r_[ncols, nrows] * np.array(pixel_size).flatten()
 
     tVec_d = tVec_d_from_old_detector_params(old_par, det_origin)
-    detector_params = np.hstack([old_par[3:6, 0], tVec_d.flatten(), chi, tVec_s.flatten()])
+    detector_params = np.hstack(
+        [old_par[3:6, 0], tVec_d.flatten(), chi, tVec_s.flatten()]
+        )
     if filename is not None:
         if isinstance(filename, file):
             fid = filename
@@ -104,7 +105,7 @@ def migrate_detector_config(old_par, nrows, ncols, pixel_size,
             fid = open(filename, 'w')
         print >> fid, "oscillation_stage:"
         print >> fid, "  chi:     %1.8e # radians" %detector_params[6]
-        print >> fid, "  t_vec_s: [%1.8e, %1.8e, %1.8e] # mm\n" %tuple(detector_params[7:10])
+        print >> fid, "  t_vec_s: [%1.8e, %1.8e, %1.8e] # mm\n"  %tuple(detector_params[7:10])
         print >> fid, "detector:\n  id: '%s'" %detID
         print >> fid, "  pixels:"
         print >> fid, "    rows:    %d" %nrows
@@ -121,7 +122,7 @@ def migrate_detector_config(old_par, nrows, ncols, pixel_size,
 
 def make_grain_params(quat, tVec_c=np.zeros(3), vInv=vInv_ref, filename=None):
     phi      = 2*np.arccos(quat[0])
-    n        = xf.unitVector(quat[1:, :])
+    n        = unitVector(quat[1:, :])
     expMap_c = phi*n
     if filename is not None:
         if isinstance(filename, file):
@@ -148,81 +149,42 @@ def make_grain_params(quat, tVec_c=np.zeros(3), vInv=vInv_ref, filename=None):
 # #################################################
 
 
-def initialize_experiment(cfg, verbose=False):
+def initialize_experiment(cfg):
     """takes a yml configuration file as input"""
     # make experiment
     ws = expt.Experiment()
 
-    cwd = cfg.get('working_dir', os.getcwd())
+    cwd = cfg.working_dir
 
-    materials_fname = cfg['material']['definitions']
-    material_name = cfg['material']['active']
-    detector_fname = cfg['detector']['parameters_old']
+    materials_fname = cfg.material.definitions
+    material_name = cfg.material.active
+    detector_fname = cfg.detector.parameters_old
 
-    # MATERIALS
+    # load materials
     ws.loadMaterialList(os.path.join(cwd, materials_fname))
     ws.activeMaterial = material_name
-    if verbose:
-        print "setting active material to '%s'" % (material_name)
+    logger.info("setting active material to '%s'", material_name)
 
     pd = ws.activeMaterial.planeData
 
-    # assemble the image series
-    image_dir = cfg['image_series']['directory']
-    file_stem = cfg['image_series']['file']['stem']
-    file_ids = cfg['image_series']['file']['ids']
-    image_start = cfg['image_series']['images']['start']
-    file_info = []
-    for fid in file_ids:
-        file_info.append(
-            (os.path.join(image_dir, file_stem % fid), image_start)
-            )
-    ome_start = np.radians(cfg['image_series']['ome']['start'])
-    ome_delta = np.radians(cfg['image_series']['ome']['step'])
-    dark = cfg['image_series'].get('dark', None)
-    flip = cfg['image_series'].get('flip', None)
+    image_start = cfg.image_series.images.start
+    dark = cfg.image_series.dark
+    flip = cfg.image_series.flip
 
-    # make frame reader
-    reader = ReadGE(file_info, ome_start, ome_delta,
-                    subtractDark=dark is not None, # TODO: get rid of this
-                    dark=dark,
-                    doFlip=flip is not None,
-                    flipArg=flip, # TODO: flip=flip
-                    )
+    # detector data
+    reader = ReadGE(
+        [(f, image_start) for f in cfg.image_series.files],
+        np.radians(cfg.image_series.omega.start),
+        np.radians(cfg.image_series.omega.step),
+        subtractDark=dark is not None, # TODO: get rid of this
+        dark=dark,
+        doFlip=flip is not None,
+        flipArg=flip, # TODO: flip=flip
+        )
 
-    # DETECTOR
     ws.loadDetector(os.path.join(cwd, detector_fname))
 
     return pd, reader, ws.detector
-
-
-def merge_dicts(a, b):
-    "Returns a merged dict, updating values in `a` with values from `b`"
-    a = copy.deepcopy(a)
-    for k,v in b.iteritems():
-        if isinstance(v, dict):
-            merge_dicts(a[k], v)
-        else:
-            a[k] = v
-    return a
-
-
-def iter_cfg_sections(cfg):
-    """
-    Iterate over sections specified in the yml configuration file.
-
-    Each section inherits unspecified values from previous section.
-
-    Takes a file name as input.
-    """
-    with open(cfg, 'r') as f:
-        cfgs = f.read()
-    for cfg in yaml.load_all(cfgs):
-        try:
-            yield merge_dicts(base_cfg, cfg)
-        except NameError:
-            base_cfg = cfg
-            yield cfg
 
 
 def make_eta_ranges(eta_mask, units='degrees'):
@@ -234,25 +196,3 @@ def make_eta_ranges(eta_mask, units='degrees'):
     eta_range = [[-0.5*np.pi + eta_mask, 0.5*np.pi - eta_mask],
                  [ 0.5*np.pi + eta_mask, 1.5*np.pi - eta_mask]]
     return eta_range
-
-
-class memoized(object):
-    """Decorator. Caches a function's return value each time it is called.
-    If called later with the same arguments, the cached value is returned
-    (not reevaluated).
-    """
-    def __init__(self, func):
-        self.func = func
-        self.cache = {}
-    def __call__(self, *args, **kw):
-        if not isinstance(args, collections.Hashable):
-            # uncacheable. a list, for instance.
-            # better to not cache than blow up.
-            return self.func(*args, **kw)
-        key = (args, frozenset(kw.items()))
-        if key in self.cache:
-            return self.cache[key]
-        else:
-            value = self.func(*args, **kw)
-            self.cache[key] = value
-            return value

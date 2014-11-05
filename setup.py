@@ -26,6 +26,7 @@
 # ============================================================
 
 from distutils.core import setup, Extension
+from distutils.cmd import Command
 import os
 import sys
 
@@ -33,7 +34,27 @@ import numpy
 np_include_dir = os.path.join(numpy.get_include(), 'numpy')
 
 
-description = "hexrd diffraction data analysis"
+class test(Command):
+
+    """Run the test suite."""
+
+    description = "Run the test suite"
+
+    user_options = [('verbosity', 'v', 'set test report verbosity')]
+
+    def initialize_options(self):
+        self.verbosity = 0
+
+    def finalize_options(self):
+        try:
+            self.verbosity = int(self.verbosity)
+        except ValueError:
+            raise ValueError('Verbosity must be an integer.')
+
+    def run(self):
+        import unittest
+        suite = unittest.TestLoader().discover('hexrd')
+        unittest.TextTestRunner(verbosity=self.verbosity+1).run(suite)
 
 
 # for SgLite
@@ -56,12 +77,14 @@ transforms_mod = Extension('hexrd.xrd._transforms_CAPI', sources=srclist,
 # all modules
 ext_modules = [sglite_mod, transforms_mod]
 
+
 packages = []
 for dirpath, dirnames, filenames in os.walk('hexrd'):
     if '__init__.py' in filenames:
         packages.append('.'.join(dirpath.split(os.sep)))
     else:
         del(dirnames[:])
+
 
 scripts = []
 if sys.platform.startswith('win'):
@@ -74,9 +97,11 @@ else:
 if ('bdist_wininst' in sys.argv) or ('bdist_msi' in sys.argv):
     scripts.append('scripts/hexrd_win_post_install.py')
 
+
 # release.py contains version, authors, license, url, keywords, etc.
 repo_root = os.path.dirname(os.path.abspath(__file__))
 execfile(os.path.join(repo_root, 'hexrd','release.py'), globals())
+
 
 package_data = [
     'COPYING',
@@ -86,10 +111,14 @@ package_data = [
     'data/all_materials.cfg',
     ]
 
+
 data_files = [
     'share/example_config.yml',
     'share/calibrate_from_single_crystal.ipynb'
     ]
+
+
+description = "hexrd diffraction data analysis"
 
 
 setup(
@@ -109,5 +138,6 @@ setup(
         ),
     scripts = scripts,
     package_data = {'hexrd': package_data},
-    data_files = [('share/hexrd', data_files)]
+    data_files = [('share/hexrd', data_files)],
+    cmdclass = {'test': test}
     )
