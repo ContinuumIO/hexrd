@@ -63,6 +63,17 @@ def execute(args, parser):
 
     cfg = config.open(args.yml)[0]
 
+    full_analysis_dir = os.path.join(cfg.working_dir, cfg.analysis_dir)
+    if os.path.exists(full_analysis_dir) and not args.force:
+        logger.error(
+            'analysis "%s" already exists, change yml file or specify "force"',
+            cfg.analysis_name
+            )
+        import sys
+        sys.exit()
+    if not os.path.exists(full_analysis_dir):
+        os.makedirs(full_analysis_dir)
+
     # now we know where to save the log file
     logfile = os.path.join(
         cfg.working_dir,
