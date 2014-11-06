@@ -1,0 +1,34 @@
+package:
+  name: hexrd
+  # Placeholder. The version is set from git describe in build.sh
+  version: master
+
+source:
+  git_url: https://github.com/ContinuumIO/hexrd.git
+  # Use
+  # git_tag: tag
+  # to specify a git tag to checkout
+
+requirements:
+  build:
+    - python
+    - setuptools
+    - numpy #>=1.4.0
+    - scipy >=0.7.0
+    - wxpython >=2.8
+#    - numbapro
+  run:
+    - python
+    - numpy #>=1.4.0
+    - scipy >=0.7.0
+    - wxpython >=2.8
+#    - numbapro
+
+test:
+  imports:
+    - hexrd
+
+about:
+  license: LGPL
+  home: https://github.com/ContinuumIO/hexrd
+  summary: High energy diffraction microscopy
