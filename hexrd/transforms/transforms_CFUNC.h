@@ -48,10 +48,11 @@ void detectorXYToGvec_cfunc(long int npts, double * xy,
 			    double * beamVec, double * etaVec,
 			    double * tTh, double * eta, double * gVec_l);
 
-void oscillAnglesOfHKLs_cfunc(long int npts, double * hkls, double chi,
+void oscillAnglesOfHKLs_cfunc(long int npts, long int nrpts,
+			      double * hkls, double chi,
 			      double * rMat_c, double * bMat, double wavelength,
 			      double * vInv_s, double * beamVec, double * etaVec,
-			      double * oangs0, double * oangs1);
+			      double * oangs);
 
 /******************************************************************************/
 /* Utility Funtions */

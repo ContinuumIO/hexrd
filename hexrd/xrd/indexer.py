@@ -706,9 +706,20 @@ def paintGrid(quats, etaOmeMaps,
     computation?
     """
 
-    quats = num.atleast_2d(quats)
+    # import cPickle
+    # with open('pgdata.p','wb') as fp:
+    #     cPickle.dump({
+    #         'quats':quats, 'etaOmeMaps':etaOmeMaps, 'threshold':threshold,
+    #         'bMat':bMat, 'omegaRange':omegaRange, 'etaRange':etaRange,
+    #         'omeTol':omeTol, 'etaTol':etaTol, 'omePeriod':omePeriod,
+    #         'doMultiProc':doMultiProc, 'nCPUs':nCPUs, 'debug':debug
+    #         }, fp)
+    #     print('***PICKLED DATA DUMPED***')
+
     if quats.size == 4:
-        quats = quats.reshape(4, 1)
+        quats = quats.reshape(1,4)
+    else:
+        quats = num.ascontiguousarray(quats.T)
 
     planeData = etaOmeMaps.planeData
 
@@ -788,7 +799,7 @@ def paintGrid(quats, etaOmeMaps,
 
     if multiProcMode:
         nCPUs = nCPUs or xrdbase.dfltNCPU
-        chunksize = min(quats.shape[1] // nCPUs, 10)
+        chunksize = min(quats.shape[0] // nCPUs, 10)
         logger.info(
             "using multiprocessing with %d processes and a chunk size of %d",
             nCPUs, chunksize
@@ -835,13 +846,13 @@ def paintGrid(quats, etaOmeMaps,
     if multiProcMode:
         # multiple process version
         pool = multiprocessing.Pool(nCPUs, paintgrid_init, (params, ))
-        retval = pool.map(paintGridThis, quats.T, chunksize=chunksize)
+        retval = pool.map(paintGridThis, quats, chunksize=chunksize)
         pool.close()
     else:
         # single process version.
         global paramMP
         paintgrid_init(params) # sets paramMP
-        retval = map(paintGridThis, quats.T)
+        retval = map(paintGridThis, quats)
         paramMP = None # clear paramMP
     elapsed = (time.time() - start)
     logger.info("paintGrid took %.3f seconds", elapsed)
@@ -996,12 +1007,10 @@ if USE_NUMBA:
 
         # get the equivalent rotation of the quaternion in matrix form (as
         # expected by oscillAnglesOfHKLs
-
         rMat = xfcapi.makeRotMatOfQuat(quat)
 
         # Compute the oscillation angles of all the symHKLs at once
-        oangs_pair = xfcapi.oscillAnglesOfHKLs(symHKLs, 0., rMat, bMat,
-                                               wavelength)
+        oangs_pair = xfcapi.oscillAnglesOfHKLs(symHKLs, 0., rMat, bMat, wavelength)
 
         return _filter_and_count_hits(oangs_pair[0], oangs_pair[1], symHKLs_ix,
                                       etaEdges, valid_eta_spans,

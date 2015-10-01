@@ -472,15 +472,15 @@ static PyObject * oscillAnglesOfHKLs(PyObject * self, PyObject * args)
   PyArrayObject *hkls, *rMat_c, *bMat,
                 *vInv_s, *beamVec, *etaVec;
   PyFloatObject *chi, *wavelength;
-  PyArrayObject *oangs0, *oangs1;
+  PyArrayObject *oangs;
 
   int dhkls, drc, dbm, dvi, dbv, dev;
-  npy_intp npts, dims[2];
+  npy_intp npts, nrpts, dims[4];
 
   double *hkls_Ptr, chi_d,
          *rMat_c_Ptr, *bMat_Ptr, wavelen_d,
          *vInv_s_Ptr, *beamVec_Ptr, *etaVec_Ptr;
-  double *oangs0_Ptr, *oangs1_Ptr;
+  double *oangs_Ptr;
 
   /* Parse arguments */
   if ( !PyArg_ParseTuple(args,"OOOOOOOO",
@@ -498,23 +498,23 @@ static PyObject * oscillAnglesOfHKLs(PyObject * self, PyObject * args)
   dvi   = PyArray_NDIM(vInv_s);
   dbv   = PyArray_NDIM(beamVec);
   dev   = PyArray_NDIM(etaVec);
-  assert( dhkls == 2 && drc == 2 && dbm == 2 &&
+  assert( dhkls == 2 && (drc == 2 || drc == 3) && dbm == 2 &&
 	  dvi   == 1 && dbv == 1 && dev == 1);
 
   /* Verify dimensions of input arrays */
   npts = PyArray_DIMS(hkls)[0];
+  nrpts = drc == 2 ? 1 : PyArray_DIMS(rMat_c)[0];
 
   assert( PyArray_DIMS(hkls)[1]    == 3 );
-  assert( PyArray_DIMS(rMat_c)[0]  == 3 && PyArray_DIMS(rMat_c)[1] == 3 );
+  assert( PyArray_DIMS(rMat_c)[drc-2]  == 3 && PyArray_DIMS(rMat_c)[drc-1] == 3 );
   assert( PyArray_DIMS(bMat)[0]    == 3 && PyArray_DIMS(bMat)[1]   == 3 );
   assert( PyArray_DIMS(vInv_s)[0]  == 6 );
   assert( PyArray_DIMS(beamVec)[0] == 3 );
   assert( PyArray_DIMS(etaVec)[0]  == 3 );
 
   /* Allocate arrays for return values */
-  dims[0] = npts; dims[1] = 3;
-  oangs0 = (PyArrayObject*)PyArray_EMPTY(2,dims,NPY_DOUBLE,0);
-  oangs1 = (PyArrayObject*)PyArray_EMPTY(2,dims,NPY_DOUBLE,0);
+  dims[0] = nrpts; dims[1] = 2; dims[2] = npts; dims[3] = 3;
+  oangs = (PyArrayObject*)PyArray_EMPTY(drc+1,&dims[drc==2?1:0],NPY_DOUBLE,0);
 
   /* Grab data pointers into various arrays */
   hkls_Ptr    = (double*)PyArray_DATA(hkls);
@@ -530,14 +530,13 @@ static PyObject * oscillAnglesOfHKLs(PyObject * self, PyObject * args)
   beamVec_Ptr = (double*)PyArray_DATA(beamVec);
   etaVec_Ptr  = (double*)PyArray_DATA(etaVec);
 
-  oangs0_Ptr  = (double*)PyArray_DATA(oangs0);
-  oangs1_Ptr  = (double*)PyArray_DATA(oangs1);
+  oangs_Ptr   = (double*)PyArray_DATA(oangs);
 
   /* Call the computational routine */
-  oscillAnglesOfHKLs_cfunc(npts, hkls_Ptr, chi_d,
+  oscillAnglesOfHKLs_cfunc(npts, nrpts, hkls_Ptr, chi_d,
 			   rMat_c_Ptr, bMat_Ptr, wavelen_d,
 			   vInv_s_Ptr, beamVec_Ptr, etaVec_Ptr,
-			   oangs0_Ptr, oangs1_Ptr);
+			   oangs_Ptr);
 
   // printf("chi = %g, wavelength = %g\n",PyFloat_AsDouble((PyObject*)chi),PyFloat_AsDouble((PyObject*)wavelength));
   /*
@@ -545,7 +544,7 @@ np.ascontiguousarray(hkls),chi,rMat_c,bMat,wavelength,
                                                beamVec.flatten(),etaVec.flatten()
   */
   /* Build and return the list data structure */
-  return(Py_BuildValue("OO",oangs0,oangs1));
+  return((PyObject*)oangs);
 }
 
 /******************************************************************************/
