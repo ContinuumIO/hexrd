@@ -50,14 +50,10 @@ from hexrd.xrd           import xrdbase
 
 from hexrd.xrd import transforms      as xf
 from hexrd.xrd import transforms_CAPI as xfcapi
-from hexrd import USE_NUMBA
-
-if USE_NUMBA:
-    import numba
+from hexrd.xrd import transforms_NUMBA as xfcn
 
 if xrdbase.haveMultiProc:
     multiprocessing = xrdbase.multiprocessing # formerly import
-
 
 logger = logging.getLogger(__name__)
 
@@ -679,14 +675,84 @@ def pgRefine(x, etaOmeMaps, omegaRange, threshold):
     f = abs(1. - c)
     return f
 
-paramMP = None
+
+class GridPainter:
+    def __init__(self, etaOmeMaps, threshold=None, bMat=None,
+                 omegaRange=None, etaRange=None,
+                 omeTol=d2r, etaTol=d2r,
+                 omePeriod=(-num.pi, num.pi)):
+
+        planeData = etaOmeMaps.planeData
+        self.wavelength = planeData.wavelength
+
+        hklIDs = etaOmeMaps.iHKLList
+        nHKLS = len(hklIDs)
+        if threshold is None:
+            threshold = num.zeros(nHKLS)
+            for i, tmap in enumerate(etaOmeMaps):
+                threshold[i] = 0.5*(num.mean(tmap),num.median(tmap))
+        elif threshold is not None and not hasattr(threshold, '__len__'):
+            threshold = threshold * num.ones(nHKLS)
+        elif hasattr(threshold, '__len__'):
+            if len(threshold) != nHKLS:
+                raise RuntimeError, "threshold list is wrong length!"
+            else:
+                print "INFO: using list of threshold values"
+        else:
+            raise RuntimeError(
+                "unknown threshold option. should be a list of numbers or None"
+                )
+        self.threshold = threshold
+
+        if bMat is None:
+            bMat = planeData.latVecOps['B']
+        self.bMat = bMat
+
+        self.ome_offset = min(omePeriod)
+        self.omeEdges = etaOmeMaps.omeEdges
+        if omegaRange is None:             # this NEEDS TO BE FIXED! (how?)
+            omegaRange = [(self.omeEdges[0],self.omeEdges[-1])]
+        self.valid_ome_spans = _normalize_ranges(omegaRange, self.ome_offset)
+        self.dpix_ome =  int(round(omeTol / abs(self.omeEdges[1] - self.omeEdges[0])))
+
+        self.etaEdges = etaOmeMaps.etaEdges
+        self.eta_offset = num.min(self.etaEdges)
+        if etaRange is None:
+            etaRange = [(self.eta_offset,num.max(self.etaEdges))]
+        self.valid_eta_spans = _normalize_ranges(etaRange, self.eta_offset)
+        self.dpix_eta = int(round(etaTol / abs(self.etaEdges[1] - self.etaEdges[0])))
+
+        # Get the symHKLs for the selected hklIDs. Restructure them into a
+        # NumPy array with each HKL stored contiguously. symHKLs_ix gives us
+        # the 
+        # the start/end index for each subarray of symHKLs.
+        symHKLs = planeData.getSymHKLs()
+        symHKLs = [symHKLs[id] for id in hklIDs]
+        self.symHKLs_ix = num.hstack([x]*y.shape[1] for x,y in zip(hklIDs,symHKLs))
+        self.symHKLs = num.vstack(s.T for s in symHKLs).astype(float)
+        self.etaOmeMaps = etaOmeMaps.dataStore
+
+        self.vInv_s = num.array([1., 1., 1., 0., 0., 0.])
+        self.beamVec = num.array([0., 0., -1.])
+        self.etaVec = num.array([1., 0., 0.])
+
+    def __call__(self, quats):
+        return xfcn.paintGridThis(quats,
+                self.symHKLs, 0.0, self.bMat, self.wavelength, 
+                self.vInv_s, self.beamVec, self.etaVec,
+                self.symHKLs_ix, self.threshold, self.etaOmeMaps, 
+                self.eta_offset, self.valid_eta_spans, self.etaEdges, self.dpix_eta,
+                self.ome_offset, self.valid_ome_spans, self.omeEdges, self.dpix_ome)
+
+
 def paintGrid(quats, etaOmeMaps,
               threshold=None, bMat=None,
               omegaRange=None, etaRange=None,
               omeTol=d2r, etaTol=d2r,
               omePeriod=(-num.pi, num.pi),
               doMultiProc=False,
-              nCPUs=None, debug=False):
+              nCPUs=None, chunksize=None,
+              debug=False):
     """
     do a direct search of omega-eta maps to paint each orientation in
     quats with a completeness
@@ -705,621 +771,71 @@ def paintGrid(quats, etaOmeMaps,
     ...make a new function that gets called by grain to do the g-vec angle
     computation?
     """
-
-    # import cPickle
-    # with open('pgdata.p','wb') as fp:
-    #     cPickle.dump({
-    #         'quats':quats, 'etaOmeMaps':etaOmeMaps, 'threshold':threshold,
-    #         'bMat':bMat, 'omegaRange':omegaRange, 'etaRange':etaRange,
-    #         'omeTol':omeTol, 'etaTol':etaTol, 'omePeriod':omePeriod,
-    #         'doMultiProc':doMultiProc, 'nCPUs':nCPUs, 'debug':debug
-    #         }, fp)
-    #     print('***PICKLED DATA DUMPED***')
-
-    if quats.size == 4:
-        quats = quats.reshape(1,4)
-    else:
-        quats = num.ascontiguousarray(quats.T)
-
-    planeData = etaOmeMaps.planeData
-
-    hklIDs    = num.r_[etaOmeMaps.iHKLList]
-    hklList   = num.atleast_2d(planeData.hkls[:, hklIDs].T).tolist()
-    nHKLS     = len(hklIDs)
-
-    numEtas   = len(etaOmeMaps.etaEdges) - 1
-    numOmes   = len(etaOmeMaps.omeEdges) - 1
-
-    if threshold is None:
-        threshold = num.zeros(nHKLS)
-        for i in range(nHKLS):
-            threshold[i] = num.mean(
-                num.r_[
-                    num.mean(etaOmeMaps.dataStore[i]),
-                    num.median(etaOmeMaps.dataStore[i])
-                    ]
-                )
-    elif threshold is not None and not hasattr(threshold, '__len__'):
-        threshold = threshold * num.ones(nHKLS)
-    elif hasattr(threshold, '__len__'):
-        if len(threshold) != nHKLS:
-            raise RuntimeError, "threshold list is wrong length!"
-        else:
-            print "INFO: using list of threshold values"
-    else:
-        raise RuntimeError(
-            "unknown threshold option. should be a list of numbers or None"
-            )
-    if bMat is None:
-        bMat = planeData.latVecOps['B']
-
-    """
-    index munging here -- look away
-
-    order of ome-eta map arrays is (i, j) --> (ome, eta)
-    i.e. eta varies fastest.
-    """
-    # mapIndices = num.indices([numEtas, numOmes])
-    # etaIndices = mapIndices[0].flatten()
-    # omeIndices = mapIndices[1].T.flatten()
-    # etaIndices = num.tile(range(numEtas), (numOmes))
-    # omeIndices = num.tile(range(numOmes), (numEtas))
-    # j_eta, i_ome = np.meshgrid(range(numEtas), range(numOmes))
-    # etaIndices = j_eta.flatten()
-    # omeIndices = i_ome.flatten()
-    etaIndices = num.r_[range(numEtas)]
-    omeIndices = num.r_[range(numOmes)]
-
-    omeMin = None
-    omeMax = None
-    if omegaRange is None:              # this NEEDS TO BE FIXED!
-        omeMin = [num.min(etaOmeMaps.omeEdges),]
-        omeMax = [num.max(etaOmeMaps.omeEdges),]
-    else:
-        omeMin = [omegaRange[i][0] for i in range(len(omegaRange))]
-        omeMax = [omegaRange[i][1] for i in range(len(omegaRange))]
-    if omeMin is None:
-        omeMin = [-num.pi, ]
-        omeMax = [ num.pi, ]
-    omeMin = num.asarray(omeMin)
-    omeMax = num.asarray(omeMax)
-
-    etaMin = None
-    etaMax = None
-    if etaRange is not None:
-        etaMin = [etaRange[i][0] for i in range(len(etaRange))]
-        etaMax = [etaRange[i][1] for i in range(len(etaRange))]
-    if etaMin is None:
-        etaMin = [-num.pi, ]
-        etaMax = [ num.pi, ]
-    etaMin = num.asarray(etaMin)
-    etaMax = num.asarray(etaMax)
-
+    painter = GridPainter(etaOmeMaps, threshold, bMat, omegaRange, etaRange, omeTol, etaTol, omePeriod)
     multiProcMode = xrdbase.haveMultiProc and doMultiProc
-
     if multiProcMode:
         nCPUs = nCPUs or xrdbase.dfltNCPU
-        chunksize = min(quats.shape[0] // nCPUs, 10)
-        logger.info(
-            "using multiprocessing with %d processes and a chunk size of %d",
-            nCPUs, chunksize
-            )
+    else:
+        nCPUs = 1
+    if nCPUs > 1:
+        nq = quats.shape[1]
+        chunksize = min((nq - 1) // nCPUs + 1, chunksize or 10)
+        nchunks = ( (nq - 1) // ( chunksize * nCPUs ) + 1 ) * nCPUs
+        chunksize = (nq - 1) // nchunks + 1
+        logger.info("using multiprocessing with %d processes, nchunks = %d, chunksize = %d",nCPUs,nchunks,chunksize)
     else:
         logger.info("running in serial mode")
-        nCPUs = 1
-
-    # Get the symHKLs for the selected hklIDs
-    symHKLs = planeData.getSymHKLs()
-    symHKLs = [symHKLs[id] for id in hklIDs]
-    # Restructure symHKLs into a flat NumPy HKL array with
-    # each HKL stored contiguously (C-order instead of F-order)
-    # symHKLs_ix provides the start/end index for each subarray
-    # of symHKLs.
-    symHKLs_ix = num.add.accumulate([0] + [s.shape[1] for s in symHKLs])
-    symHKLs = num.vstack(s.T for s in symHKLs)
-
-    # Pack together the common parameters for processing
-    params = {
-        'symHKLs': symHKLs,
-        'symHKLs_ix': symHKLs_ix,
-        'wavelength': planeData.wavelength,
-        'hklList': hklList,
-        'omeMin': omeMin,
-        'omeMax': omeMax,
-        'omeTol': omeTol,
-        'omeIndices': omeIndices,
-        'omePeriod': omePeriod,
-        'omeEdges': etaOmeMaps.omeEdges,
-        'etaMin': etaMin,
-        'etaMax': etaMax,
-        'etaTol': etaTol,
-        'etaIndices': etaIndices,
-        'etaEdges': etaOmeMaps.etaEdges,
-        'etaOmeMaps': etaOmeMaps.dataStore,
-        'bMat': bMat,
-        'threshold': threshold
-        }
-
-    # do the mapping
-    start = time.time()
-    retval = None
-    if multiProcMode:
-        # multiple process version
-        pool = multiprocessing.Pool(nCPUs, paintgrid_init, (params, ))
-        retval = pool.map(paintGridThis, quats, chunksize=chunksize)
+    startTime = time.time()
+    quats = quats.T
+    if nCPUs > 1:
+        chunks = (quats[k*chunksize:min((k+1)*chunksize,nq),:] for k in range(nchunks))
+        pool = multiprocessing.Pool(nCPUs)
+        retval = num.hstack(pool.map(painter,chunks))
         pool.close()
     else:
-        # single process version.
-        global paramMP
-        paintgrid_init(params) # sets paramMP
-        retval = map(paintGridThis, quats)
-        paramMP = None # clear paramMP
-    elapsed = (time.time() - start)
+        retval = painter(quats)
+    elapsed = (time.time() - startTime)
     logger.info("paintGrid took %.3f seconds", elapsed)
-
     return retval
 
-def _meshgrid2d(x, y):
-    """
-    A special-cased implementation of np.meshgrid, for just
-    two arguments. Found to be about 3x faster on some simple
-    test arguments.
-    """
-    x, y = (num.asarray(x), num.asarray(y))
-    shape = (len(y), len(x))
-    dt = num.result_type(x, y)
-    r1, r2 = (num.empty(shape, dt), num.empty(shape, dt))
-    r1[...] = x[num.newaxis, :]
-    r2[...] = y[:, num.newaxis]
-    return (r1, r2)
-
-
-
-def _normalize_ranges(starts, stops, offset, ccw=False):
+def _normalize_ranges(ranges, offset, ccw=False):
     """normalize in the range [offset, 2*pi+offset[ the ranges defined
     by starts and stops.
 
     Checking if an angle lies inside a range can be done in a way that
     is more efficient than using validateAngleRanges.
 
-    Note this function assumes that ranges don't overlap.
+    This function does not allow ranges to overlap.
     """
+    ranges = num.asarray(ranges)
     if ccw:
-        starts, stops = stops, starts
+        ranges = ranges[:,::-1]
 
     # results are in the range of [0, 2*np.pi]
-    if not num.all(starts < stops):
+    if num.any(ranges[:,0] >= ranges[:,1]):
         raise ValueError('Invalid angle ranges')
 
+    # if any range is full, return just that
+    two_pi = 2. * num.pi
+    ranges[:,1] -= ranges[:,0]
+    if num.any(ranges[:,1] >= two_pi):
+        if ranges.shape[0] > 1:
+            raise ValueError('Angle ranges overlap')
+        ranges[0,0] = offset
+        ranges[0,1] = offset + two_pi
+        return ranges.ravel()
 
-    # If there is a range that spans more than 2*pi,
-    # return the full range
-    two_pi = 2 * num.pi
-    if num.any((starts + two_pi) < stops):
-        return num.array([offset, two_pi+offset])
-
-    starts = num.mod(starts - offset, two_pi) + offset
-    stops = num.mod(stops - offset, two_pi) + offset
-
-    order = num.argsort(starts)
-    result = num.hstack((starts[order, num.newaxis],
-                        stops[order, num.newaxis])).ravel()
-    # at this point, result is in its final form unless there
-    # is wrap-around in the last segment. Handle this case:
-    if result[-1] < result[-2]:
-        new_result = num.empty((len(result)+2,), dtype=result.dtype)
-        new_result[0] = offset
-        new_result[1] = result[-1]
-        new_result[2:-1] = result[0:-1]
-        new_result[-1] = offset + two_pi
-        result = new_result
-
-    if not num.all(starts[1:] > stops[0:-2]):
+    # Realign to the range offset to offset + 2 * pi
+    ranges[:,0] = num.mod(ranges[:,0] - offset, two_pi) + offset
+    ranges[:,1] += ranges[:,0]
+    omax = offset + two_pi
+    if ranges[-1,1] > omax:
+        ranges = num.vstack(((offset, ranges[-1,1] - two_pi), ranges))
+        ranges[-1,1] = omax
+    if num.any(ranges[:-1,1] > ranges[1:,0]):
         raise ValueError('Angle ranges overlap')
 
-    return result
-
-
-def paintgrid_init(params):
-    global paramMP
-    paramMP = params
-
-    # create valid_eta_spans, valid_ome_spans from etaMin/Max and omeMin/Max
-    # this allows using faster checks in the code.
-    # TODO: build valid_eta_spans and valid_ome_spans directly in paintGrid
-    #       instead of building etaMin/etaMax and omeMin/omeMax. It may also
-    #       be worth handling range overlap and maybe "optimize" ranges if
-    #       there happens to be contiguous spans.
-    paramMP['valid_eta_spans'] = _normalize_ranges(paramMP['etaMin'],
-                                                   paramMP['etaMax'],
-                                                   -num.pi)
-
-    paramMP['valid_ome_spans'] = _normalize_ranges(paramMP['omeMin'],
-                                                   paramMP['omeMax'],
-                                                   min(paramMP['omePeriod']))
-
-
-
-################################################################################
-
-# paintGridThis contains the bulk of the process to perform for paintGrid for a
-# given quaternion. This is also used as the basis for multiprocessing, as the
-# work is split in a per-quaternion basis among different processes.
-# The remainding arguments are marshalled into the module variable "paramMP".
-
-# There is a version of PaintGridThis using numba, and another version used when
-# numba is not available. The numba version should be noticeably faster.
-
-def _check_dilated(eta, ome, dpix_eta, dpix_ome, etaOmeMap, threshold):
-    """This is part of paintGridThis:
-
-    check if there exists a sample over the given threshold in the etaOmeMap
-    at (eta, ome), with a tolerance of (dpix_eta, dpix_ome) samples.
-
-    Note this function is "numba friendly" and will be jitted when using numba.
-
-    """
-    i_max, j_max = etaOmeMap.shape
-    ome_start, ome_stop = max(ome - dpix_ome, 0), min(ome + dpix_ome + 1, i_max)
-    eta_start, eta_stop = max(eta - dpix_eta, 0), min(eta + dpix_eta + 1, j_max)
-
-    for i in range(ome_start, ome_stop):
-        for j in range(eta_start, eta_stop):
-            if etaOmeMap[i,j] > threshold:
-                return 1
-    return 0
-
-
-if USE_NUMBA:
-    def paintGridThis(quat):
-        # Note that this version does not use omeMin/omeMax to specify the valid
-        # angles. It uses "valid_eta_spans" and "valid_ome_spans". These are
-        # precomputed and make for a faster check of ranges than
-        # "validateAngleRanges"
-        symHKLs = paramMP['symHKLs'] # the HKLs
-        symHKLs_ix = paramMP['symHKLs_ix'] # index partitioning of symHKLs
-        bMat = paramMP['bMat']
-        wavelength = paramMP['wavelength']
-        omeEdges = paramMP['omeEdges']
-        omeTol = paramMP['omeTol']
-        omePeriod = paramMP['omePeriod']
-        valid_eta_spans = paramMP['valid_eta_spans']
-        valid_ome_spans = paramMP['valid_ome_spans']
-        omeIndices = paramMP['omeIndices']
-        etaEdges = paramMP['etaEdges']
-        etaTol = paramMP['etaTol']
-        etaIndices = paramMP['etaIndices']
-        etaOmeMaps = paramMP['etaOmeMaps']
-        threshold = paramMP['threshold']
-
-        # dpix_ome and dpix_eta are the number of pixels for the tolerance in
-        # ome/eta. Maybe we should compute this per run instead of per
-        # quaternion
-        del_ome = abs(omeEdges[1] - omeEdges[0])
-        del_eta = abs(etaEdges[1] - etaEdges[0])
-        dpix_ome = int(round(omeTol / del_ome))
-        dpix_eta = int(round(etaTol / del_eta))
-
-        debug = False
-        if debug:
-            print( "using ome, eta dilitations of (%d, %d) pixels" \
-                  % (dpix_ome, dpix_eta))
-
-        # get the equivalent rotation of the quaternion in matrix form (as
-        # expected by oscillAnglesOfHKLs
-        rMat = xfcapi.makeRotMatOfQuat(quat)
-
-        # Compute the oscillation angles of all the symHKLs at once
-        oangs_pair = xfcapi.oscillAnglesOfHKLs(symHKLs, 0., rMat, bMat, wavelength)
-
-        return _filter_and_count_hits(oangs_pair[0], oangs_pair[1], symHKLs_ix,
-                                      etaEdges, valid_eta_spans,
-                                      valid_ome_spans, omeEdges, omePeriod,
-                                      etaOmeMaps, etaIndices, omeIndices,
-                                      dpix_eta, dpix_ome, threshold)
-
-
-    @numba.jit
-    def _find_in_range(value, spans):
-        """find the index in spans where value >= spans[i] and value < spans[i].
-
-        spans is an ordered array where spans[i] <= spans[i+1] (most often <
-        will hold).
-
-        If value is not in the range [spans[0], spans[-1][, then -2 is returned.
-
-        This is equivalent to "bisect_right" in the bisect package, in which
-        code it is based, and it is somewhat similar to NumPy's searchsorted,
-        but non-vectorized
-
-        """
-
-        if value < spans[0] or value >= spans[-1]:
-            return -2
-
-        # from the previous check, we know 0 is not a possible result
-        li = 0
-        ri = len(spans)
-
-        while li < ri:
-            mi = (li + ri) // 2
-            if value < spans[mi]:
-                ri = mi
-            else:
-                li = mi+1
-
-        return li
-
-
-    @numba.njit
-    def _angle_is_hit(ang, eta_offset, ome_offset, hkl, valid_eta_spans,
-                      valid_ome_spans, etaEdges, omeEdges, etaOmeMaps,
-                      etaIndices, omeIndices, dpix_eta, dpix_ome, threshold):
-        """perform work on one of the angles.
-
-        This includes:
-
-        - filtering nan values
-
-        - filtering out angles not in the specified spans
-
-        - checking that the discretized angle fits into the sensor range (maybe
-          this could be merged with the previous test somehow, for extra speed)
-
-        - actual check for a hit, using dilation for the tolerance.
-
-        Note the function returns both, if it was a hit and if it passed the the
-        filtering, as we'll want to discard the filtered values when computing
-        the hit percentage.
-
-        """
-        tth, eta, ome = ang
-
-        if num.isnan(tth):
-            return 0, 0
-
-        eta = _map_angle(eta, eta_offset)
-        if _find_in_range(eta, valid_eta_spans) & 1 == 0:
-            # index is even: out of valid eta spans
-            return 0, 0
-
-        ome = _map_angle(ome, ome_offset)
-        if _find_in_range(ome, valid_ome_spans) & 1 == 0:
-            # index is even: out of valid ome spans
-            return 0, 0
-
-        # discretize the angles
-        eta_idx = _find_in_range(eta, etaEdges) - 1
-        if eta_idx < 0:
-            # out of range
-            return 0, 0
-
-        ome_idx = _find_in_range(ome, omeEdges) - 1
-        if ome_idx < 0:
-            # out of range
-            return 0, 0
-
-        eta = etaIndices[eta_idx]
-        ome = omeIndices[ome_idx]
-        isHit = _check_dilated(eta, ome, dpix_eta, dpix_ome,
-                               etaOmeMaps[hkl], threshold[hkl])
-
-        return isHit, 1
-
-
-    @numba.njit
-    def _filter_and_count_hits(angs_0, angs_1, symHKLs_ix, etaEdges,
-                               valid_eta_spans, valid_ome_spans, omeEdges,
-                               omePeriod, etaOmeMaps, etaIndices, omeIndices,
-                               dpix_eta, dpix_ome, threshold):
-        """assumes:
-        we want etas in -pi -> pi range
-        we want omes in ome_offset -> ome_offset + 2*pi range
-
-        Instead of creating an array with the angles of angs_0 and angs_1
-        interleaved, in this numba version calls for both arrays are performed
-        getting the angles from angs_0 and angs_1. this is done in this way to
-        reuse hkl computation. This may not be that important, though.
-
-        """
-        eta_offset = -num.pi
-        ome_offset = num.min(omePeriod)
-        hits = 0
-        total = 0
-        curr_hkl_idx = 0
-        end_curr = symHKLs_ix[1]
-        count = len(angs_0)
-
-        for i in range(count):
-            if i >= end_curr:
-                curr_hkl_idx += 1
-                end_curr = symHKLs_ix[curr_hkl_idx+1]
-            hit, not_filtered = _angle_is_hit(angs_0[i], eta_offset, ome_offset,
-                                              curr_hkl_idx, valid_eta_spans,
-                                              valid_ome_spans, etaEdges,
-                                              omeEdges, etaOmeMaps, etaIndices,
-                                              omeIndices, dpix_eta, dpix_ome,
-                                              threshold)
-            hits += hit
-            total += not_filtered
-            hit, not_filtered = _angle_is_hit(angs_1[i], eta_offset, ome_offset,
-                                              curr_hkl_idx, valid_eta_spans,
-                                              valid_ome_spans, etaEdges,
-                                              omeEdges, etaOmeMaps, etaIndices,
-                                              omeIndices, dpix_eta, dpix_ome,
-                                              threshold)
-            hits += hit
-            total += not_filtered
-
-        return float(hits)/float(total) if total != 0 else 0.0
-
-
-    @numba.njit
-    def _map_angle(angle, offset):
-        """Equivalent to xf.mapAngle in this context, and 'numba friendly'
-
-        """
-        return num.mod(angle-offset, 2*num.pi)+offset
-
-    # use a jitted version of _check_dilated
-    _check_dilated = numba.njit(_check_dilated)
-else:
-    def paintGridThis(quat):
-        # unmarshall parameters into local variables
-        symHKLs = paramMP['symHKLs'] # the HKLs
-        symHKLs_ix = paramMP['symHKLs_ix'] # index partitioning of symHKLs
-        bMat = paramMP['bMat']
-        wavelength = paramMP['wavelength']
-        omeEdges = paramMP['omeEdges']
-        omeTol = paramMP['omeTol']
-        omePeriod = paramMP['omePeriod']
-        valid_eta_spans = paramMP['valid_eta_spans']
-        valid_ome_spans = paramMP['valid_ome_spans']
-        omeIndices = paramMP['omeIndices']
-        etaEdges = paramMP['etaEdges']
-        etaTol = paramMP['etaTol']
-        etaIndices = paramMP['etaIndices']
-        etaOmeMaps = paramMP['etaOmeMaps']
-        threshold = paramMP['threshold']
-
-        # dpix_ome and dpix_eta are the number of pixels for the tolerance in
-        # ome/eta. Maybe we should compute this per run instead of
-        # per-quaternion
-        del_ome = abs(omeEdges[1] - omeEdges[0])
-        del_eta = abs(etaEdges[1] - etaEdges[0])
-        dpix_ome = int(round(omeTol / del_ome))
-        dpix_eta = int(round(etaTol / del_eta))
-
-        debug = False
-        if debug:
-            print( "using ome, eta dilitations of (%d, %d) pixels" \
-                  % (dpix_ome, dpix_eta))
-
-        # get the equivalent rotation of the quaternion in matrix form (as
-        # expected by oscillAnglesOfHKLs
-
-        rMat = xfcapi.makeRotMatOfQuat(quat)
-
-        # Compute the oscillation angles of all the symHKLs at once
-        oangs_pair = xfcapi.oscillAnglesOfHKLs(symHKLs, 0., rMat, bMat,
-                                               wavelength)
-        hkl_idx, eta_idx, ome_idx = _filter_angs(oangs_pair[0], oangs_pair[1],
-                                                 symHKLs_ix, etaEdges,
-                                                 valid_eta_spans, omeEdges,
-                                                 valid_ome_spans, omePeriod)
-
-        if len(hkl_idx > 0):
-            hits = _count_hits(eta_idx, ome_idx, hkl_idx, etaOmeMaps,
-                               etaIndices, omeIndices, dpix_eta, dpix_ome,
-                               threshold)
-            retval = float(hits) / float(len(hkl_idx))
-        else:
-            retval = 0
-
-        return retval
-
-    def _normalize_angs_hkls(angs_0, angs_1, omePeriod, symHKLs_ix):
-        # Interleave the two produced oang solutions to simplify later
-        # processing
-        oangs = num.empty((len(angs_0)*2, 3), dtype=angs_0.dtype)
-        oangs[0::2] = angs_0
-        oangs[1::2] = angs_1
-
-        # Map all of the angles at once
-        oangs[:, 1] = xf.mapAngle(oangs[:, 1])
-        oangs[:, 2] = xf.mapAngle(oangs[:, 2], omePeriod)
-
-        # generate array of symHKLs indices
-        symHKLs_ix = symHKLs_ix*2
-        hkl_idx = num.empty((symHKLs_ix[-1],), dtype=int)
-        start = symHKLs_ix[0]
-        idx=0
-        for end in symHKLs_ix[1:]:
-            hkl_idx[start:end] = idx
-            start = end
-            idx+=1
-
-        return oangs, hkl_idx
-
-
-    def _filter_angs(angs_0, angs_1, symHKLs_ix, etaEdges, valid_eta_spans,
-                     omeEdges, valid_ome_spans, omePeriod):
-        """
-        This is part of paintGridThis:
-
-        bakes data in a way that invalid (nan or out-of-bound) is discarded.
-        returns:
-          - hkl_idx, array of associated hkl indices
-          - eta_idx, array of associated eta indices of predicted
-          - ome_idx, array of associated ome indices of predicted
-        """
-        oangs, hkl_idx = _normalize_angs_hkls(angs_0, angs_1, omePeriod,
-                                              symHKLs_ix)
-        # using "right" side to make sure we always get an index *past* the value
-        # if it happens to be equal. That is... we search the index of the first
-        # value that is "greater than" rather than "greater or equal"
-        culled_eta_indices = num.searchsorted(etaEdges, oangs[:, 1],
-                                              side='right')
-        culled_ome_indices = num.searchsorted(omeEdges, oangs[:, 2],
-                                              side='right')
-        # this check is equivalent to validateAngleRanges:
-        #
-        # The spans contains an ordered sucession of start and end angles which
-        # form the valid angle spans. So knowing if an angle is valid is
-        # equivalent to finding the insertion point in the spans array and
-        # checking if the resulting insertion index is odd or even. An odd value
-        # means that it falls between a start and a end point of the "valid
-        # span", meaning it is a hit. An even value will result in either being
-        # out of the range (0 or the last index, as length is even by
-        # construction) or that it falls between a "end" point from one span and
-        # the "start" point of the next one.
-        valid_eta = num.searchsorted(valid_eta_spans, oangs[:, 1], side='right')
-        valid_ome = num.searchsorted(valid_ome_spans, oangs[:, 2], side='right')
-        # fast odd/even check
-        valid_eta = valid_eta & 1
-        valid_ome = valid_ome & 1
-        # Create a mask of the good ones
-        valid = ~num.isnan(oangs[:, 0]) # tth not NaN
-        valid = num.logical_and(valid, valid_eta)
-        valid = num.logical_and(valid, valid_ome)
-        valid = num.logical_and(valid, culled_eta_indices > 0)
-        valid = num.logical_and(valid, culled_eta_indices < len(etaEdges))
-        valid = num.logical_and(valid, culled_ome_indices > 0)
-        valid = num.logical_and(valid, culled_ome_indices < len(omeEdges))
-
-        hkl_idx = hkl_idx[valid]
-        eta_idx = culled_eta_indices[valid] - 1
-        ome_idx = culled_ome_indices[valid] - 1
-
-        return hkl_idx, eta_idx, ome_idx
-
-
-    def _count_hits(eta_idx, ome_idx, hkl_idx, etaOmeMaps,
-                    etaIndices, omeIndices, dpix_eta, dpix_ome, threshold):
-        """
-        This is part of paintGridThis:
-
-        for every eta, ome, hkl check if there is a sample that surpasses the
-        threshold in the eta ome map.
-        """
-        predicted = len(hkl_idx)
-        hits = 0
-
-        for curr_ang in range(predicted):
-            culledEtaIdx = eta_idx[curr_ang]
-            culledOmeIdx = ome_idx[curr_ang]
-            iHKL = hkl_idx[curr_ang]
-            # got a result
-            eta = etaIndices[culledEtaIdx]
-            ome = omeIndices[culledOmeIdx]
-            isHit = _check_dilated(eta, ome, dpix_eta, dpix_ome,
-                                   etaOmeMaps[iHKL], threshold[iHKL])
-
-            if isHit:
-                hits += 1
-
-        return hits
-
+    return ranges.ravel()
 
 def writeGVE(spotsArray, fileroot, **kwargs):
     """
