@@ -274,6 +274,12 @@ def generate_eta_ome_maps(cfg, pd, reader, detector, hkls=None):
     return eta_ome
 
 
+def savenpz(filename, data):
+    # write data to filename in binary format
+    filename, ext = os.path.splitext(filename)
+    filename += '.npz'
+    np.savez(filename, data)
+
 def find_orientations(cfg, hkls=None, profile=False):
     """
     Takes a config dict as input, generally a yml document
@@ -339,12 +345,11 @@ def find_orientations(cfg, hkls=None, profile=False):
             cfg.find_orientations.seed_search.hkl_seeds,
             cfg.find_orientations.seed_search.fiber_ndiv
             )
-        np.savetxt(
-            os.path.join(cfg.working_dir, 'trial_orientations.dat'),
-            quats.T,
-            fmt="%.18e",
-            delimiter="\t"
-            )
+
+        # output as text and binary
+        output = os.path.join(cfg.working_dir, 'trial_orientations.dat')
+        np.savetxt(output, quats.T, fmt="%.18e", delimiter="\t")
+        savenpz(output, quats.T)
 
     # generate the completion maps
     logger.info("Running paintgrid on %d trial orientations", (quats.shape[1]))
@@ -367,7 +372,10 @@ def find_orientations(cfg, hkls=None, profile=False):
         doMultiProc=ncpus > 1,
         nCPUs=ncpus
         )
-    np.savetxt(os.path.join(cfg.working_dir, 'completeness.dat'), compl)
+
+    output = os.path.join(cfg.working_dir, 'completeness.dat')
+    np.savetxt(output, compl)
+    savenpz(output, compl)
 
     ##########################################################
     ##   Simulate N random grains to get neighborhood size  ##
@@ -406,9 +414,7 @@ def find_orientations(cfg, hkls=None, profile=False):
     
     # cluster analysis to identify orientation blobs, the final output:
     qbar, cl = run_cluster(compl, quats, pd.getQSym(), cfg, min_samples=min_samples)
-    np.savetxt(
-        os.path.join(cfg.working_dir, 'accepted_orientations.dat'),
-        qbar.T,
-        fmt="%.18e",
-        delimiter="\t"
-        )
+
+    output = os.path.join(cfg.working_dir, 'accepted_orientations.dat')
+    np.savetxt(output, qbar.T, fmt="%.18e", delimiter="\t")
+    savenpz(output, qbar.T)
