@@ -1,4 +1,3 @@
-
 from __future__ import print_function
 
 import cPickle
@@ -543,10 +542,12 @@ def find_orientations(cfg, hkls=None, clean=False, profile=False):
         logger.info("Profiling mode active, forcing ncpus to 1")
         ncpus = 1
     else:
-        ncpus = cfg.multiprocessing
+        ncpus = cfg.multiprocessing.ncpus
+        chunksize = cfg.multiprocessing.chunksize
         logger.info(
             "%d of %d available processors requested", ncpus, mp.cpu_count()
             )
+        logger.info("approximate chunk size %d requested", chunksize)
     compl = idx.paintGrid(
         quats,
         eta_ome,
@@ -555,8 +556,7 @@ def find_orientations(cfg, hkls=None, clean=False, profile=False):
         etaTol=np.radians(cfg.find_orientations.eta.tolerance),
         omePeriod=np.radians(cfg.find_orientations.omega.period),
         threshold=cfg.find_orientations.threshold,
-        doMultiProc=ncpus > 1,
-        nCPUs=ncpus
+        nCPUs=ncpus, chunksize=chunksize
         )
 
     if save_as_ascii:

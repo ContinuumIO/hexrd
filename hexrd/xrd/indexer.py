@@ -750,7 +750,6 @@ def paintGrid(quats, etaOmeMaps,
               omegaRange=None, etaRange=None,
               omeTol=d2r, etaTol=d2r,
               omePeriod=(-num.pi, num.pi),
-              doMultiProc=False,
               nCPUs=None, chunksize=None,
               debug=False):
     """
@@ -772,11 +771,7 @@ def paintGrid(quats, etaOmeMaps,
     computation?
     """
     painter = GridPainter(etaOmeMaps, threshold, bMat, omegaRange, etaRange, omeTol, etaTol, omePeriod)
-    multiProcMode = xrdbase.haveMultiProc and doMultiProc
-    if multiProcMode:
-        nCPUs = nCPUs or xrdbase.dfltNCPU
-    else:
-        nCPUs = 1
+    nCPUs = (nCPUs or xrdbase.dfltNCPU) if xrdbase.haveMultiProc else 1
     if nCPUs > 1:
         nq = quats.shape[1]
         chunksize = min((nq - 1) // nCPUs + 1, chunksize or 10)
