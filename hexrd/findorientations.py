@@ -346,9 +346,15 @@ def find_orientations(cfg, hkls=None, profile=False):
             cfg.find_orientations.seed_search.fiber_ndiv
             )
 
-        # output as text and binary
+        # For the nonce, keep the ability to create  .dat files handy, 
+        # to facilitate comparison and/or for timing.  Because no 
+        # dataset we have access to shows any significant difference
+        # in performance, the use of text or binary files is 
+        # a matter or preference. 
+
+        # output as binary
         output = os.path.join(cfg.working_dir, 'trial_orientations.dat')
-        np.savetxt(output, quats.T, fmt="%.18e", delimiter="\t")
+        #np.savetxt(output, quats.T, fmt="%.18e", delimiter="\t")
         savenpz(output, quats.T)
 
     # generate the completion maps
@@ -374,7 +380,7 @@ def find_orientations(cfg, hkls=None, profile=False):
         )
 
     output = os.path.join(cfg.working_dir, 'completeness.dat')
-    np.savetxt(output, compl)
+    #np.savetxt(output, compl)
     savenpz(output, compl)
 
     ##########################################################
@@ -416,5 +422,5 @@ def find_orientations(cfg, hkls=None, profile=False):
     qbar, cl = run_cluster(compl, quats, pd.getQSym(), cfg, min_samples=min_samples)
 
     output = os.path.join(cfg.working_dir, 'accepted_orientations.dat')
-    np.savetxt(output, qbar.T, fmt="%.18e", delimiter="\t")
+    #np.savetxt(output, qbar.T, fmt="%.18e", delimiter="\t")
     savenpz(output, qbar.T)
