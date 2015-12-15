@@ -1,17 +1,20 @@
 from __future__ import division, print_function
-from math import isnan, hypot, fabs, cos, sin, acos, pi, atan2, asin, sqrt
+from math import isnan, fabs, cos, sin, acos, pi, atan2, asin, sqrt
+from numpy import hypot
 import numpy as np
 import numba as nb
+hypot2 = hypot
 
 TARGET = 'cpu'
 if TARGET == 'cuda':
-    @nb.cuda.jit(device=True)
-    def hypot(x,y):
-        return sqrt(x**2+y**2)
+    from numba import cuda
     def jit(signature):
-        return nb.cuda.jit(signature, device=True)
+        return cuda.jit(signature, device=True)
     def guvectorize(sig1, sig2):
         return nb.guvectorize(sig1, sig2, nopython=True, target='cuda')
+    @jit('f8(f8,f8)')
+    def hypot2(x,y):
+        return sqrt(x**2+y**2)
 
 elif TARGET == 'parallel':
     def jit(signature):
@@ -28,7 +31,7 @@ else:
 
 @jit('f8(f8[:])')
 def norm3_(vec):
-    return hypot(hypot(vec[0], vec[1]), vec[2])
+    return hypot2(hypot2(vec[0], vec[1]), vec[2])
 
 @guvectorize('(f8[:],f8[:])','(n)->()')
 def norm3_gufunc_(vec, out):
@@ -89,13 +92,13 @@ def dot3_(a, b):
 def dot3_gufunc_(a, b, out):
     out[0] = dot3_(a, b)
 
-def dot3(a, b, out=None):
+def dot3(a, b):
     '''
     Optimized dot product for 3 vectors (and arrays of same).
     '''
     if a.shape[-1] != 3 or b.shape[-1] != 3:
         raise RuntimeError('Inputs must be arrays of 3-vectors')
-    return dot3_gufunc_(a, b, out)
+    return dot3_gufunc_(a, b)
 
 
 @jit('(f8[:],f8[:,:])')
@@ -135,18 +138,18 @@ def quatToRotMat_(q, m):
 def quatToRotMat_gufunc_(q, d3, m):
     quatToRotMat_(q, m)
 
-def quatToRotMat(quats, out=None):
+def quatToRotMat(quats):
     """
     Make rotation matrices from unit quaternions
 
     """
     if quats.shape[-1] != 4:
         raise RuntimeError('Input must be an array of quaternions (4-vectors)')
-    return quatToRotMat_gufunc_(quats, np.empty((3,)), out)
+    return quatToRotMat_gufunc_(quats, np.empty((3,)))
 
 
 sqr05 = sqrt(0.5)
-@nb.jit(nopython=True)
+@nb.jit('f8[:,:](f8[:])', nopython=True)
 def vecMVToSymm(A):
     symm = np.empty((3,3))
     symm[0, 0] = A[0]
@@ -159,7 +162,7 @@ def vecMVToSymm(A):
 
 
 etaFrameTol = 1.0 - sqrt(np.finfo(np.float32).eps)
-@nb.jit(nopython=True)
+@nb.jit('f8[:,:](f8[:],f8[:])', nopython=True)
 def etaFrameToRotMat(beamVec, etaVec):
     rMat = np.empty((3,3))
     tmp = hypot(hypot(beamVec[0], beamVec[1]), beamVec[2])
@@ -187,11 +190,11 @@ def mv3_(a, b, c):
     c[1] = dot3_(a[1], b)
     c[2] = dot3_(a[2], b)
 
-@jit('(f8[:],f8,f8,f8[:,:],f8[:,:],f8,f8[:,:],f8[:,:],f8[:,:])')
-def oscillAnglesOfHKL_(hkl, cc, sc, rMat_c, bMat, wavelength, vMat_s, rMat_e, oangs):
+@jit('(f8[:],f8,f8,f8[:,:],f8[:,:],f8,f8[:,:],f8[:,:],f8[:,:],f8[:,:])')
+def oscillAnglesOfHKL_(hkl, cc, sc, rMat_c, bMat, wavelength, vMat_s, rMat_e, scratch, oangs):
     # reciprocal lattice vector in SAMPLE frame
-    tmp = np.empty((3,))
-    gHat_s = np.empty((3,))
+    tmp = scratch[0]
+    gHat_s = scratch[1]
     mv3_(bMat, hkl, gHat_s)
     mv3_(rMat_c, gHat_s, tmp)
     mv3_(vMat_s, tmp, gHat_s)
@@ -212,7 +215,7 @@ def oscillAnglesOfHKL_(hkl, cc, sc, rMat_c, bMat, wavelength, vMat_s, rMat_e, oa
     c =               -sintht + gHat_s[1] * t2
 
     # form solution
-    abMag = hypot(a,b)
+    abMag = hypot2(a,b)
     phaseAng = atan2(b,a)
     rhs = c / abMag
 
@@ -235,17 +238,24 @@ def oscillAnglesOfHKL_(hkl, cc, sc, rMat_c, bMat, wavelength, vMat_s, rMat_e, oa
         tmp[2] = sc * gHat_s[1] + cc * ( co * gHat_s[2] - so * gHat_s[0] )
         oangs[i,1] = atan2(dot3_(tmp, rMat_e[:,1]), dot3_(tmp, rMat_e[:,0]))
 
-@guvectorize(
-    '(f8[:],f8,f8,f8[:,:],f8[:,:],f8,f8[:,:],f8[:,:],f8[:],f8[:,:])',
-    '(n3),(),(),(n3,n3),(n3,n3),(),(n3,n3),(n3,n4),(n2)->(n2,n3)')
-def oscillAnglesOfHKL_gufunc_(hkl, cc, sc, rMat_c, bMat, wavelength, vMat_s, rMat_e, dummy2, oangs):
-    oscillAnglesOfHKL_(hkl, cc, sc, rMat_c, bMat, wavelength, vMat_s, rMat_e, oangs)
+if TARGET=='cuda':
+    def oscillAnglesOfHKL_gufunc_(hkl, cc, sc, rMat_c, bMat, wavelength, vMat_s, rMat_e, dummy2, oangs):
+        scratch = cuda.local.array((2,3), dtype=nb.float64)
+        oscillAnglesOfHKL_(hkl, cc, sc, rMat_c, bMat, wavelength, vMat_s, rMat_e, scratch, oangs)
+else:
+    def oscillAnglesOfHKL_gufunc_(hkl, cc, sc, rMat_c, bMat, wavelength, vMat_s, rMat_e, dummy2, oangs):
+        scratch = np.empty((2,3))
+        oscillAnglesOfHKL_(hkl, cc, sc, rMat_c, bMat, wavelength, vMat_s, rMat_e, scratch, oangs)
+oscillAnglesOfHKL_gufunc_ = guvectorize(
+        '(f8[:],f8,f8,f8[:,:],f8[:,:],f8,f8[:,:],f8[:,:],f8[:],f8[:,:])',
+        '(n3),(),(),(n3,n3),(n3,n3),(),(n3,n3),(n3,n4),(n2)->(n2,n3)'
+        )(oscillAnglesOfHKL_gufunc_)
 
 VEC2 = np.empty((2,))
 vInv_ref = np.array([1.,1.,1.,0.,0.,0.])
 bVec_ref = np.array([0.,0.,-1.])
 eta_ref = np.array([1.,0.,0.])
-def oscillAnglesOfHKL(hkl, chi, rMat, bMat, wavelength, vInv_s=vInv_ref, beamVec=bVec_ref, etaVec=eta_ref, out=None):
+def oscillAnglesOfHKL(hkl, chi, rMat, bMat, wavelength, vInv_s=vInv_ref, beamVec=bVec_ref, etaVec=eta_ref):
     vMat_s = vecMVToSymm(vInv_s)                # stretch tensor in SAMPLE frame
     rMat_e = etaFrameToRotMat(beamVec, etaVec)  # eta basis COB with beam antiparallel with Z
     nrmat = rMat.ndim - 2
@@ -255,7 +265,7 @@ def oscillAnglesOfHKL(hkl, chi, rMat, bMat, wavelength, vInv_s=vInv_ref, beamVec
     if nhkl > 0:
         rMat = rMat.reshape(rMat.shape[:1] + ((1,) * nhkl) + rMat.shape[1:])
     return oscillAnglesOfHKL_gufunc_(hkl, np.cos(chi), np.sin(chi), rMat, bMat, wavelength, 
-        vMat_s, rMat_e, VEC2, out)
+        vMat_s, rMat_e, VEC2)
 
 
 @jit('i8(f8,f8[:])')
@@ -340,32 +350,20 @@ def angle_is_hit_(angles, threshold, etaOmeMap,
     return (0, 1)
 
 
-@guvectorize(
-'(f8[:],i8,f8[:],f8[:,:,:], f8,f8[:],f8[:],i8, f8,f8[:],f8[:],i8, f8[:],i8[:])',
-'(n3),(),(m1),(m1,m2,m3), (),(m4),(m5),(), (),(m7),(m8),(), (n2)->(n2)')
-def angle_is_hit_gufunc_(ang, hkl, threshold, etaOmeMaps,
-        offset_eta, valid_eta_spans, etaEdges, dpix_eta,
-        offset_ome, valid_ome_spans, omeEdges, dpix_ome, 
-        dummy2, out):
-    out[0], out[1] = angle_is_hit_(
-            ang, threshold[hkl], etaOmeMaps[hkl],
-            offset_eta, valid_eta_spans, etaEdges, dpix_eta,
-            offset_ome, valid_ome_spans, omeEdges, dpix_ome)
-
-
-tiny64 = np.finfo(np.float64).min
-@jit('(f8[:], f8[:,:],f8,f8,f8[:,:],f8,f8[:,:],f8[:,:], i8[:],f8[:],f8[:,:,:], f8,f8[:],f8[:],i8, f8,f8[:],f8[:],i8)')
+tiny64 = np.finfo(np.float64).tiny
+@jit('(f8[:], f8[:,:],f8,f8,f8[:,:],f8,f8[:,:],f8[:,:], i8[:],f8[:],f8[:,:,:], f8,f8[:],f8[:],i8, f8,f8[:],f8[:],i8, f8[:,:])')
 def paintGridThis_(quat,
     hkls, cc, sc, bMat, wavelength, vMat_s, rMat_e, 
     hkl_ix, thresholds, etaOmeMaps,
     offset_eta, valid_eta_spans, etaEdges, dpix_eta,
-    offset_ome, valid_ome_spans, omeEdges, dpix_ome):
-    rMat = np.empty((3,3))
-    oangs = np.empty((2,3))
+    offset_ome, valid_ome_spans, omeEdges, dpix_ome, scratch):
+    rMat = scratch[:3]
+    oangs = scratch[3:5]
+    scratch2 = scratch[5:]
     quatToRotMat_(quat, rMat)
     total = hits = 0
     for i in range(hkls.shape[0]):
-        oscillAnglesOfHKL_(hkls[i], cc, sc, rMat, bMat, wavelength, vMat_s, rMat_e, oangs)
+        oscillAnglesOfHKL_(hkls[i], cc, sc, rMat, bMat, wavelength, vMat_s, rMat_e, scratch2, oangs)
         etaOmeMap = etaOmeMaps[hkl_ix[i]]
         threshold = thresholds[hkl_ix[i]]
         for j in range(2):
@@ -377,25 +375,40 @@ def paintGridThis_(quat,
             total += nt
     return float(hits) / (float(total) + tiny64)
 
-@guvectorize(
+if TARGET=='cuda':
+    def paintGridThis_gufunc_(quat,
+        hkls, cc, sc, bMat, wavelength, vMat_s, rMat_e, 
+        hkl_ix, threshold, etaOmeMaps,
+        offset_eta, valid_eta_spans, etaEdges, dpix_eta,
+        offset_ome, valid_ome_spans, omeEdges, dpix_ome, out):
+        out[0] = paintGridThis_(quat,
+                hkls, cc, sc, bMat, wavelength, vMat_s, rMat_e,
+                hkl_ix, threshold, etaOmeMaps,
+                offset_eta, valid_eta_spans, etaEdges, dpix_eta,
+                offset_ome, valid_ome_spans, omeEdges, dpix_ome, 
+                cuda.local.array((7,3), dtype=nb.float64))
+else:
+    def paintGridThis_gufunc_(quat,
+        hkls, cc, sc, bMat, wavelength, vMat_s, rMat_e, 
+        hkl_ix, threshold, etaOmeMaps,
+        offset_eta, valid_eta_spans, etaEdges, dpix_eta,
+        offset_ome, valid_ome_spans, omeEdges, dpix_ome, out):
+        out[0] = paintGridThis_(quat,
+                hkls, cc, sc, bMat, wavelength, vMat_s, rMat_e,
+                hkl_ix, threshold, etaOmeMaps,
+                offset_eta, valid_eta_spans, etaEdges, dpix_eta,
+                offset_ome, valid_ome_spans, omeEdges, dpix_ome,
+                np.empty((7,3)))
+paintGridThis_gufunc_ = guvectorize(
     '(f8[:], f8[:,:],f8,f8,f8[:,:],f8,f8[:,:],f8[:,:], i8[:],f8[:],f8[:,:,:],  f8,f8[:],f8[:],i8,f8,f8[:],f8[:],i8, f8[:])',
-    '(n4),   (mm,n3),(),(),(n3,n3),(),(n3,n3),(n3,n3), (mm), (m1), (m1,m2,m3), (), (m4), (m5),(),(),(m7), (m8), ()  -> ()')
-def paintGridThis_gufunc_(quat,
-    hkls, cc, sc, bMat, wavelength, vMat_s, rMat_e, 
-    hkl_ix, threshold, etaOmeMaps,
-    offset_eta, valid_eta_spans, etaEdges, dpix_eta,
-    offset_ome, valid_ome_spans, omeEdges, dpix_ome, out):
-    out[0] = paintGridThis_(quat,
-            hkls, cc, sc, bMat, wavelength, vMat_s, rMat_e,
-            hkl_ix, threshold, etaOmeMaps,
-            offset_eta, valid_eta_spans, etaEdges, dpix_eta,
-            offset_ome, valid_ome_spans, omeEdges, dpix_ome)
+    '(n4),   (mm,n3),(),(),(n3,n3),(),(n3,n3),(n3,n3), (mm), (m1), (m1,m2,m3), (), (m4), (m5),(),(),(m7), (m8), () -> ()'
+    )(paintGridThis_gufunc_)
 
 def paintGridThis(quats,
     hkls, chi, bMat, wavelength, vInv_s, beamVec, etaVec,
     hkl_ix, threshold, etaOmeMaps,
     offset_eta, valid_eta_spans, etaEdges, dpix_eta,
-    offset_ome, valid_ome_spans, omeEdges, dpix_ome, out=None):
+    offset_ome, valid_ome_spans, omeEdges, dpix_ome):
     if quats.ndim == 0 or quats.shape[-1] != 4:
         raise RuntimeError('An array of quaternions is expected, but quats.shape[-1] != 4')
     vMat_s = vecMVToSymm(vInv_s)                # stretch tensor in SAMPLE frame
@@ -406,4 +419,5 @@ def paintGridThis(quats,
                 hkls, cc, sc, bMat, wavelength, vMat_s, rMat_e,
                 hkl_ix, threshold, etaOmeMaps,
                 offset_eta, valid_eta_spans, etaEdges, dpix_eta,
-                offset_ome, valid_ome_spans, omeEdges, dpix_ome, out)
+                offset_ome, valid_ome_spans, omeEdges, dpix_ome)
+
