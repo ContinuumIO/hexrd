@@ -5,7 +5,6 @@ from .config import Config
 
 class MaterialConfig(Config):
 
-
     @property
     def definitions(self):
         temp = self._cfg.get('material:definitions')

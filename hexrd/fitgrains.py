@@ -188,7 +188,7 @@ def fit_grains(cfg, force=False, clean=False, show_progress=False, ids_to_refine
     job_queue, njobs = get_job_queue(cfg, ids_to_refine)
 
     # log this before starting progress bar
-    ncpus = cfg.multiprocessing
+    ncpus = cfg.multiprocessing.ncpus
     ncpus = ncpus if ncpus < njobs else njobs
     logger.info(
         'will use %d of %d processors', ncpus, mp.cpu_count()

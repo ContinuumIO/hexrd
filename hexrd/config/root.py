@@ -1,6 +1,5 @@
 import os
 import logging
-import multiprocessing as mp
 import sys
 
 from hexrd.utils.decorators import memoized
@@ -11,6 +10,7 @@ from .findorientations import FindOrientationsConfig
 from .fitgrains import FitGrainsConfig
 from .imageseries import ImageSeriesConfig
 from .material import MaterialConfig
+from .multiproc import MultiprocessingConfig
 from .utils import null
 
 
@@ -69,54 +69,7 @@ class RootConfig(Config):
 
     @property
     def multiprocessing(self):
-        # determine number of processes to run in parallel
-        multiproc = self.get('multiprocessing', default=-1)
-        ncpus = mp.cpu_count()
-        if multiproc == 'all':
-            res = ncpus
-        elif multiproc == 'half':
-            temp = ncpus / 2
-            res = temp if temp else 1
-        elif isinstance(multiproc, int):
-            if multiproc >= 0:
-                if multiproc > ncpus:
-                    logger.warning(
-                        'Resuested %s processes, %d available',
-                        multiproc, ncpus, ncpus
-                        )
-                    res = ncpus
-                else:
-                    res = multiproc if multiproc else 1
-            else:
-                temp = ncpus + multiproc
-                if temp < 1:
-                    logger.warning(
-                        'Cannot use less than 1 process, requested %d of %d',
-                        temp, ncpus
-                        )
-                    res = 1
-                else:
-                    res = temp
-        else:
-            temp = ncpus - 1
-            logger.warning(
-                "Invalid value %s for multiprocessing",
-                multiproc
-                )
-            res = temp
-        return res
-    @multiprocessing.setter
-    def multiprocessing(self, val):
-        if val in ('half', 'all', -1):
-            self.set('multiprocessing', val)
-        elif (val >= 0 and val <= mp.cpu_count):
-            self.set('multiprocessing', int(val))
-        else:
-            raise RuntimeError(
-                '"multiprocessing": must be 1:%d, got %s'
-                % (mp.cpu_count(), val)
-                )
-
+        return MultiprocessingConfig(self)
 
     @property
     def working_dir(self):

@@ -310,12 +310,13 @@ void detectorXYToGvec_cfunc(long int npts, double * xy,
   }
 }
 
-void oscillAnglesOfHKLs_cfunc(long int npts, double * hkls, double chi,
+void oscillAnglesOfHKLs_cfunc(long int npts, long int nrpts,
+                              double * hkls, double chi,
                               double * rMat_c, double * bMat, double wavelength,
                               double * vInv_s, double * beamVec, double * etaVec,
-                              double * oangs0, double * oangs1)
+                              double * oangs)
 {
-  long int i;
+  long int i, nr, oinc = npts * 3, rinc = npts * 6;
   int j, k;
   bool crc = false;
 
@@ -365,118 +366,120 @@ void oscillAnglesOfHKLs_cfunc(long int npts, double * hkls, double chi,
   cchi = cos(chi);
   schi = sin(chi);
 
-  for (i=0; i<npts; i++) {
+  for (nr=0; nr<nrpts; nr++) {
+    for (i=0; i<npts; i++) {
 
-    /* Compute gVec_c */
-    for (j=0; j<3; j++) {
-      gHat_c[j] = 0.0;
-      for (k=0; k<3; k++) {
-        gHat_c[j] += bMat[3*j+k]*hkls[3L*i+k];
-      }
-    }
-
-    /* Apply rMat_c to get gVec_s */
-    for (j=0; j<3; j++) {
-      gHat_s[j] = 0.0;
-      for (k=0; k<3; k++) {
-        gHat_s[j] += rMat_c[3*j+k]*gHat_c[k];
-      }
-    }
-
-    /* Apply vInv_s to gVec_s and store in tmpVec*/
-    tmpVec[0] = vInv_s[0]*gHat_s[0] + (vInv_s[5]*gHat_s[1] + vInv_s[4]*gHat_s[2])/sqrt(2.);
-    tmpVec[1] = vInv_s[1]*gHat_s[1] + (vInv_s[5]*gHat_s[0] + vInv_s[3]*gHat_s[2])/sqrt(2.);
-    tmpVec[2] = vInv_s[2]*gHat_s[2] + (vInv_s[4]*gHat_s[0] + vInv_s[3]*gHat_s[1])/sqrt(2.);
-
-    /* Apply rMat_c.T to get stretched gVec_c and store norm in nrm0*/
-    nrm0 = 0.0;
-    for (j=0; j<3; j++) {
-      gHat_c[j] = 0.0;
-      for (k=0; k<3; k++) {
-        gHat_c[j] += rMat_c[j+3*k]*tmpVec[k];
-      }
-      nrm0 += gHat_c[j]*gHat_c[j];
-    }
-    nrm0 = sqrt(nrm0);
-
-    /* Normalize both gHat_c and gHat_s */
-    if ( nrm0 > epsf ) {
+      /* Compute gVec_c */
       for (j=0; j<3; j++) {
-        gHat_c[j] /= nrm0;
-        gHat_s[j]  = tmpVec[j]/nrm0;
+        gHat_c[j] = 0.0;
+        for (k=0; k<3; k++) {
+          gHat_c[j] += bMat[3*j+k]*hkls[3L*i+k];
+        }
       }
-    }
 
-    /* Compute the sine of the Bragg angle */
-    sintht = 0.5*wavelength*nrm0;
-
-    /* Compute the coefficients of the harmonic equation */
-    a = gHat_s[2]*bHat_l[0] + schi*gHat_s[0]*bHat_l[1] - cchi*gHat_s[0]*bHat_l[2];
-    b = gHat_s[0]*bHat_l[0] - schi*gHat_s[2]*bHat_l[1] + cchi*gHat_s[2]*bHat_l[2];
-    c =            - sintht - cchi*gHat_s[1]*bHat_l[1] - schi*gHat_s[1]*bHat_l[2];
-
-    /* Form solution */
-    abMag    = sqrt(a*a + b*b); assert( abMag > 0.0 );
-    phaseAng = atan2(b,a);
-    rhs      = c/abMag;
-
-    if ( fabs(rhs) > 1.0 ) {
-      for (j=0; j<3; j++)
-        oangs0[3L*i+j] = NAN;
-      for (j=0; j<3; j++)
-        oangs1[3L*i+j] = NAN;
-      continue;
-    }
-
-    rhsAng   = asin(rhs);
-
-    /* Write ome angles */
-    oangs0[3L*i+2] =        rhsAng - phaseAng;
-    oangs1[3L*i+2] = M_PI - rhsAng - phaseAng;
-
-    if ( crc ) {
-      makeEtaFrameRotMat_cfunc(bHat_l,eHat_l,rMat_e);
-
-      oVec[0] = chi;
-
-      oVec[1] = oangs0[3L*i+2];
-      makeOscillRotMat_cfunc(oVec[0], oVec[1], rMat_s);
-
+      /* Apply rMat_c to get gVec_s */
       for (j=0; j<3; j++) {
-        tVec0[j] = 0.0;
+        gHat_s[j] = 0.0;
         for (k=0; k<3; k++) {
-          tVec0[j] += rMat_s[3*j+k]*gHat_s[k];
+          gHat_s[j] += rMat_c[9*nr+3*j+k]*gHat_c[k];
         }
       }
-      for (j=0; j<2; j++) {
-        gVec_e[j] = 0.0;
-        for (k=0; k<3; k++) {
-          gVec_e[j] += rMat_e[3*k+j]*tVec0[k];
-        }
-      }
-      oangs0[3L*i+1] = atan2(gVec_e[1],gVec_e[0]);
 
-      oVec[1] = oangs1[3L*i+2];
-      makeOscillRotMat_cfunc(oVec[0], oVec[1], rMat_s);
+      /* Apply vInv_s to gVec_s and store in tmpVec*/
+      tmpVec[0] = vInv_s[0]*gHat_s[0] + (vInv_s[5]*gHat_s[1] + vInv_s[4]*gHat_s[2])/sqrt(2.);
+      tmpVec[1] = vInv_s[1]*gHat_s[1] + (vInv_s[5]*gHat_s[0] + vInv_s[3]*gHat_s[2])/sqrt(2.);
+      tmpVec[2] = vInv_s[2]*gHat_s[2] + (vInv_s[4]*gHat_s[0] + vInv_s[3]*gHat_s[1])/sqrt(2.);
 
+      /* Apply rMat_c.T to get stretched gVec_c and store norm in nrm0*/
+      nrm0 = 0.0;
       for (j=0; j<3; j++) {
-        tVec0[j] = 0.0;
+        gHat_c[j] = 0.0;
         for (k=0; k<3; k++) {
-          tVec0[j] += rMat_s[3*j+k]*gHat_s[k];
+          gHat_c[j] += rMat_c[9*nr+j+3*k]*tmpVec[k];
         }
+        nrm0 += gHat_c[j]*gHat_c[j];
       }
-      for (j=0; j<2; j++) {
-        gVec_e[j] = 0.0;
-        for (k=0; k<3; k++) {
-          gVec_e[j] += rMat_e[3*k+j]*tVec0[k];
-        }
-      }
-      oangs1[3L*i+1] = atan2(gVec_e[1],gVec_e[0]);
+      nrm0 = sqrt(nrm0);
 
-      oangs0[3L*i+0] = 2.0*asin(sintht);
-      oangs1[3L*i+0] = oangs0[3L*i+0];
+      /* Normalize both gHat_c and gHat_s */
+      if ( nrm0 > epsf ) {
+        for (j=0; j<3; j++) {
+          gHat_c[j] /= nrm0;
+          gHat_s[j]  = tmpVec[j]/nrm0;
+        }
+      }
+
+      /* Compute the sine of the Bragg angle */
+      sintht = 0.5*wavelength*nrm0;
+
+      /* Compute the coefficients of the harmonic equation */
+      a = gHat_s[2]*bHat_l[0] + schi*gHat_s[0]*bHat_l[1] - cchi*gHat_s[0]*bHat_l[2];
+      b = gHat_s[0]*bHat_l[0] - schi*gHat_s[2]*bHat_l[1] + cchi*gHat_s[2]*bHat_l[2];
+      c =            - sintht - cchi*gHat_s[1]*bHat_l[1] - schi*gHat_s[1]*bHat_l[2];
+
+      /* Form solution */
+      abMag    = sqrt(a*a + b*b); assert( abMag > 0.0 );
+      phaseAng = atan2(b,a);
+      rhs      = c/abMag;
+
+      if ( fabs(rhs) > 1.0 ) {
+        for (j=0; j<3; j++)
+          oangs[rinc*nr+oinc*0+3L*i+j] = NAN;
+        for (j=0; j<3; j++)
+          oangs[rinc*nr+oinc*1+3L*i+j] = NAN;
+        continue;
+      }
+
+      rhsAng   = asin(rhs);
+
+      /* Write ome angles */
+      oangs[rinc*nr+oinc*0+3L*i+2] =        rhsAng - phaseAng;
+      oangs[rinc*nr+oinc*1+3L*i+2] = M_PI - rhsAng - phaseAng;
+
+      if ( crc ) {
+        makeEtaFrameRotMat_cfunc(bHat_l,eHat_l,rMat_e);
+
+        oVec[0] = chi;
+
+        oVec[1] = oangs[rinc*nr+oinc*0+3L*i+2];
+        makeOscillRotMat_cfunc(oVec[0], oVec[1], rMat_s);
+
+        for (j=0; j<3; j++) {
+          tVec0[j] = 0.0;
+          for (k=0; k<3; k++) {
+            tVec0[j] += rMat_s[3*j+k]*gHat_s[k];
+          }
+        }
+        for (j=0; j<2; j++) {
+          gVec_e[j] = 0.0;
+          for (k=0; k<3; k++) {
+            gVec_e[j] += rMat_e[3*k+j]*tVec0[k];
+          }
+        }
+        oangs[rinc*nr+oinc*0+3L*i+1] = atan2(gVec_e[1],gVec_e[0]);
+
+        oVec[1] = oangs[rinc*nr+oinc*1+3L*i+2];
+        makeOscillRotMat_cfunc(oVec[0], oVec[1], rMat_s);
+
+        for (j=0; j<3; j++) {
+          tVec0[j] = 0.0;
+          for (k=0; k<3; k++) {
+            tVec0[j] += rMat_s[3*j+k]*gHat_s[k];
+          }
+        }
+        for (j=0; j<2; j++) {
+          gVec_e[j] = 0.0;
+          for (k=0; k<3; k++) {
+            gVec_e[j] += rMat_e[3*k+j]*tVec0[k];
+          }
+        }
+        oangs[rinc*nr+oinc*1+3L*i+1] = atan2(gVec_e[1],gVec_e[0]);
+        oangs[rinc*nr+oinc*0+3L*i+0] = 2.0*asin(sintht);
+        oangs[rinc*nr+oinc*1+3L*i+0] = oangs[rinc*nr+oinc*0+3L*i+0];
+      }
     }
   }
+
 }
 
 /******************************************************************************/
@@ -881,6 +884,56 @@ void rotate_vecs_about_axis_cfunc(long int na, double * angles,
   }
 }
 
+#define QUAT_DISTANCE_METHOD 0
+#if QUAT_DISTANCE_METHOD == 0
+double quat_distance_cfunc(int nsym, double * q1, double * q2, double * qsym)
+{
+  int i;
+  double q0, q0_max = 0.0, dist = 0.0,
+         qP0 = q1[0] * q2[0] + q1[1] * q2[1] + q1[2] * q2[2] + q1[3] * q2[3],
+         qP1 = q1[1] * q2[0] - q1[0] * q2[1] - q1[3] * q2[2] + q1[2] * q2[3],
+         qP2 = q1[2] * q2[0] + q1[3] * q2[1] - q1[0] * q2[2] - q1[1] * q2[3],
+         qP3 = q1[3] * q2[0] - q1[2] * q2[1] + q1[1] * q2[2] - q1[0] * q2[3];
+  for (i=0;i<nsym;i++) {
+      q0 = fabs(qP0*qsym[4*i+0] + qP1*qsym[4*i+1] + qP2*qsym[4*i+2] + qP3*qsym[4*i+3]);
+      if ( q0 > q0_max ) 
+          q0_max = q0;
+  }
+  if ( q0_max <= 1.0 )
+    dist = 2.0*acos(q0_max);
+  else if ( q0_max - 1. < 1e-12 )
+    /* in case of quats loaded from single precision file */
+    dist = 0.;
+  else
+    dist = NAN;
+  return(dist);
+}
+#elif QUAT_DISTANCE_METHOD == 1
+double quat_distance_cfunc(int nsym, double * q1, double * q2, double * qsym)
+{
+  int i;
+  double q0, q0_max = 0.0, dist = 0.0;
+  /* For each symmetry in qsym compute its inner product with q2 */
+  for (i=0; i<nsym; i++) {
+      q0 = fabs(q1[0] * (q2[0]*qsym[4*i+0] - q2[1]*qsym[4*i+1] - q2[2]*qsym[4*i+2] - q2[3]*qsym[4*i+3]) +
+                q1[1] * (q2[1]*qsym[4*i+0] + q2[0]*qsym[4*i+1] - q2[3]*qsym[4*i+2] + q2[2]*qsym[4*i+3]) +
+                q1[2] * (q2[2]*qsym[4*i+0] + q2[3]*qsym[4*i+1] + q2[0]*qsym[4*i+2] - q2[1]*qsym[4*i+3]) +
+                q1[3] * (q2[3]*qsym[4*i+0] - q2[2]*qsym[4*i+1] + q2[1]*qsym[4*i+2] + q2[0]*qsym[4*i+3]));
+      if ( q0 > q0_max )
+          q0_max = q0;
+  }
+
+  if ( q0_max <= 1.0 )
+    dist = 2.0*acos(q0_max);
+  else if ( q0_max - 1. < 1e-12 )
+    /* in case of quats loaded from single precision file */
+    dist = 0.;
+  else
+    dist = NAN;
+
+  return(dist);
+}
+#else
 double quat_distance_cfunc(int nsym, double * q1, double * q2, double * qsym)
 {
   int i;
@@ -920,6 +973,7 @@ double quat_distance_cfunc(int nsym, double * q1, double * q2, double * qsym)
 
   return(dist);
 }
+#endif
 
 void homochoricOfQuat_cfunc(int nq, double * qPtr, double * hPtr)
 {
