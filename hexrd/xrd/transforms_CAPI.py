@@ -283,8 +283,8 @@ def oscillAnglesOfHKLs(hkls, chi, rMat_c, bMat, wavelength,
     wavelength -- float representing the x-ray wavelength in Angstroms
 
     Optional Keyword Arguments:
-    beamVec -- (3, 1) mdarray containing the incident beam direction components in the LAB FRAME
-    etaVec  -- (3, 1) mdarray containing the reference azimuth direction components in the LAB FRAME
+    beamVec -- (3, 1) ndarray containing the incident beam direction components in the LAB FRAME
+    etaVec  -- (3, 1) ndarray containing the reference azimuth direction components in the LAB FRAME
 
     Outputs:
     ome0 -- (n, 3) ndarray containing the feasible (tTh, eta, ome) triplets for each input hkl (first solution)
@@ -332,13 +332,16 @@ def oscillAnglesOfHKLs(hkls, chi, rMat_c, bMat, wavelength,
     array here)
     """
     hkls = np.array(hkls, dtype=float, order='C')
+    chi = float(chi)
+    rMat_c = np.ascontiguousArray(rMat_c)
+    bMat = np.ascontiguousarray(bMat)
+    wavelength = float(wavelength)
     if vInv is None:
         vInv = np.ascontiguousarray(vInv_ref.flatten())
     else:
         vInv = np.ascontiguousarray(vInv.flatten())
     beamVec = np.ascontiguousarray(beamVec.flatten())
     etaVec  = np.ascontiguousarray(etaVec.flatten())
-    bMat = np.ascontiguousarray(bMat)
     return _transforms_CAPI.oscillAnglesOfHKLs(
         hkls, chi, rMat_c, bMat, wavelength, vInv, beamVec, etaVec
         )
@@ -491,6 +494,7 @@ def makeOscillRotMatArray(chi, omeArray):
     Applies makeOscillAngles multiple times, for one
     chi value and an array of omega values.
     """
+    chi = float(chi)
     arg = np.ascontiguousarray(omeArray)
     return _transforms_CAPI.makeOscillRotMatArray(chi, arg)
 
