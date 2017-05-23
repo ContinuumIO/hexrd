@@ -47,7 +47,7 @@ static double Zl[3] = {0.0,0.0,1.0};
 #if USE_C99_CODE
 static inline
 double *
-v3_v3s_inplace_add(double *dst_src1,
+v3_v3s_inplace_add(double * restrict dst_src1,
                    const double *src2, int stride)
 {
     dst_src1[0] += src2[0];
@@ -71,7 +71,7 @@ v3_v3s_add(const double *src1,
 
 static inline
 double *
-v3_v3s_inplace_sub(double *dst_src1,
+v3_v3s_inplace_sub(double * restrict dst_src1,
                    const double *src2, int stride)
 {
     dst_src1[0] -= src2[0];

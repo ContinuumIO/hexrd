@@ -23,7 +23,7 @@
 #endif
 
 /******************************************************************************/
-/* Funtions */
+/* Functions */
 
 void anglesToGvec_cfunc(long int nvecs, double * angs,
 			double * bHat_l, double * eHat_l,
@@ -65,7 +65,7 @@ void oscillAnglesOfHKLs_cfunc(long int npts, double * hkls, double chi,
 			      double * oangs0, double * oangs1);
 
 /******************************************************************************/
-/* Utility Funtions */
+/* Utility Functions */
 
 void unitRowVector_cfunc(int n, double * cIn, double * cOut);
 
