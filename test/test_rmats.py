@@ -7,7 +7,7 @@ from hexrd import matrixutil as mutil
 from hexrd.xrd import rotations as rot
 from hexrd.xrd import transforms_CAPI as xfcapi
 
-n_quats = 1e6
+n_quats = int(1e6)
 rq = mutil.unitVector(np.random.randn(4, n_quats))
 quats = np.array(rq.T, dtype=float, order='C')
 
