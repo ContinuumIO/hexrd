@@ -29,6 +29,13 @@ Testing
 In this directory there will be unittests to test the different
 functions.
 
+To run the test just use the following command line
+
+.. code:: bash
+   python -m unittest discover hexrd.xrd.transforms
+
+The tests should also be discovered when run for all hexrd.
+
 The idea is to implement a TestCase per function which performs
 all the unittests for that function. The function itself will be
 specified as a class variable in the TestCase, using the default
@@ -38,7 +45,7 @@ The TestCase implemented for the default will then be subclassed
 once per implementation, the class variable of the test having as
 value the specific alternative implementation for the test.
 
-This will look like a bit like:
+This will look like like:
 
 .. code:: python
    import unittest
