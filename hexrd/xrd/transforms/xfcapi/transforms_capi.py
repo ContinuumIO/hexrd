@@ -10,11 +10,8 @@ import numpy as np
 from hexrd.xrd import _transforms_CAPI as _xfcapi
 
 epsf = np.finfo(float).eps
-ten_epsf = 10 * epsf
-sqrt_epsf = np.sqrt(epsf)
-
-periodDict = { 'degrees': 360.0, 'radians': 2*np.pi }
-angularUnits = 'radians'
+bVec_ref = np.array([[0., 0., 1.]], order='C').T
+eta_ref = np.array([[1., 0., 0.]], order='C').T
 
 I3 = np.eye(3)
 

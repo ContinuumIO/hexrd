@@ -2,5 +2,6 @@
 
 from __future__ import absolute_import
 
-from .transforms_capi import (makeEtaFrameRotMat,
-                              anglesToGVec)
+from .rotations_capi import (makeEtaFrameRotMat,
+                             makeOscillRotMat, makeOscillRotMatArray)
+from .transforms_capi import (anglesToGVec)

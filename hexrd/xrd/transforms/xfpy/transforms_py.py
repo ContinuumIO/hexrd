@@ -18,6 +18,8 @@
 
 import numpy as np
 
+from . import rotations_py
+
 epsf = np.finfo(float).eps
 bVec_ref = np.array([[0., 0., 1.]], order='C').T
 eta_ref = np.array([[1., 0., 0.]], order='C').T
@@ -39,53 +41,23 @@ def unitVector(a):
     return nrma
 
 
-def makeEtaFrameRotMat(bHat_l, eHat_l):
-    """
-    make eta basis COB matrix with beam antiparallel with Z
-
-    takes components from ETA fram to LAB
-    """
-
-    bHat_l = unitVector(bHat_l.reshape(3, 1))
-    eHat_l = unitVector(eHat_l.reshape(3, 1))
-
-    Ye = np.cross(eHat_l.flatten(), bHat_l.flatten())
-    if np.sqrt(np.sum(Ye*Ye)) < 1e-8:
-        raise RuntimeError, "bHat_l and eHat_l must NOT be colinear!"
-    Ye = unitVector(Ye.reshape(3,1))
-
-    Xe = np.cross(bHat_l.flatten(), Ye.flatten()).reshape(3,1)
-    return np.hstack([Xe, Ye, -bHat_l])
-
-
 def anglesToGVec_legacy(angs, bHat_l, eHat_l, rMat_s=None, rMat_c=None):
     """convert angles to GVecs"""
 
-    rMat_e = makeEtaFrameRotMat(bHat_l, eHat_l)
+    rMat_e = rotations_py.makeEtaFrameRotMat(bHat_l, eHat_l)
     c0 = np.cos(0.5*angs[:,0])
     c1 = np.cos(angs[:,1])
     s0 = np.sin(0.5*angs[:,0])
     s1 = np.sin(angs[:,1])
 
-    gVec_e = np.vstack([[c0*c1], [c0*s1], [s0]])
+    gVec_e = np.array([[c0*c1], [c0*s1], [s0]])
 
     # if rMat_s or rMat_c are not provided, they are assumed to be the identity.
     # instead of computing the dot product we can just skip the computation.
-    tmp0 = rMat_e if rMat_s is None else np.dot(rMat_s.T, rMat_e)
-    tmp1 = tmp0 if rMat_c is None else np.dot(rMat_c.T, rMat_e)
+    tmp0 = rMat_e if rMat_s is None else np.matmul(rMat_s.T, rMat_e)
+    tmp1 = tmp0 if rMat_c is None else np.matmul(rMat_c.T, rMat_e)
 
-    return np.dot(tmp1, gVec_e)
-
-
-def makeOscillRotMat(chi, ome):
-    """Create oscillation rotation matrices based on chi and omega angles.
-
-    chi -- float  canting angles.
-    ome --  (n,)  oscillation angles
-    TODO: finish this
-    """
-
-    pass
+    return np.matmul(tmp1, gVec_e)
 
 
 def anglesToGVec(angs, bHat_l=bVec_ref, eHat_l=eta_ref, chi=0.0, rMat_c=None):
@@ -99,19 +71,19 @@ def anglesToGVec(angs, bHat_l=bVec_ref, eHat_l=eta_ref, chi=0.0, rMat_c=None):
                       Identity will be assumed.
     """
 
-    rMat_e = makeEtaFrameRotMat(bHat_l, eHat_l)
+    rMat_e = rotations_py.makeEtaFrameRotMat(bHat_l, eHat_l)
     c0 = np.cos(0.5*angs[:,0])
     c1 = np.cos(angs[:,1])
     s0 = np.sin(0.5*angs[:,0])
     s1 = np.sin(angs[:,1])
 
-    gVec_e = np.vstack([[c0*c1], [c0*s1], [s0]])
-    rMat_s = makeOscillRotMat(chi, angs[:,2])
+    gVec_e = np.array([[c0*c1], [c0*s1], [s0]])
+    rMat_s = rotations_py.makeOscillRotMatArray(chi, angs[:,2])
 
     # if rMat_s or rMat_c are not provided, they are assumed to be the identity.
     # instead of computing the dot product we can just skip the computation.
-    tmp0 = rMat_e if rMat_s is None else np.dot(rMat_s.T, rMat_e)
-    tmp1 = tmp0 if rMat_c is None else np.dot(rMat_c.T, rMat_e)
+    tmp0 = rMat_e if rMat_s is None else np.matmul(rMat_s.T, rMat_e)
+    tmp1 = tmp0 if rMat_c is None else np.matmul(rMat_c.T, rMat_e)
 
-    return np.dot(tmp1, gVec_e)
+    return np.matmul(tmp1, gVec_e)
     

@@ -7,22 +7,6 @@ import numpy.testing as np_testing
 
 import hexrd.xrd.transforms as xfdefault
 
-#import hexrd.xrd.xfpy as xfpy
-#import hexrd.xrd.xfnumba as xfnumba
-#import hexrd.xrd.xfcapi as xfcapi
-
-
-class Test_makeEtaFrameRotMat(unittest.TestCase):
-    fn = staticmethod(xfdefault.makeEtaFrameRotMat)
-
-    def test_simple(self):
-        # with this setup we should get something similar to identity as result
-        bHat = np.r_[0.0, 0.0, -1.0]
-        eHat = np.r_[1.0, 0.0, 0.0]
-        res = self.fn(bHat, eHat)
-        np_testing.assert_almost_equal(res, np.eye(3))
-
-
 #class Test_makeEtaFrameRotMat_CAPI(Test_makeEtaFrameRotMat_Python):
 #    fn = staticmethod(xfcapi.makeEtaFrameRotMat)
 

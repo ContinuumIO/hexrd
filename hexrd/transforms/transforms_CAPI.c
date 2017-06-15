@@ -898,6 +898,7 @@ static PyObject * makeOscillRotMatArray(PyObject * self, PyObject * args)
   return((PyObject*)rMat);
 }
 
+
 static PyObject * makeRotMatOfExpMap(PyObject * self, PyObject * args)
 {
   PyArrayObject *expMap, *rMat;

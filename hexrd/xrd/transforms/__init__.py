@@ -77,8 +77,8 @@ from ..transforms_CAPI import detectorXYToGvecArray
 from ..transforms_old  import oscillAnglesOfHKLs
 
 # rotations
-from ..transforms_old  import makeOscillRotMat
-from ..transforms_CAPI import makeOscillRotMatArray
+from .xfpy    import makeOscillRotMat
+from .xfpy    import makeOscillRotMatArray
 from ..transforms_old  import makeRotMatOfExpMap
 from ..transforms_CAPI import makeRotMatOfQuat
 from ..transforms_old  import (makeBinaryRotMat,
