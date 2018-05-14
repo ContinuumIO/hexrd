@@ -27,13 +27,15 @@
 # =============================================================================
 
 # ??? do we want to set np.seterr(invalid='ignore') to avoid nan warnings?
+from __future__ import absolute_import
+
 import numpy as np
 from numpy import float_ as npfloat
 from numpy import int_ as npint
 
 # from hexrd import constants as cnst
 import hexrd.constants as cnst
-
+from .transforms_definitions import xf_api
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -206,17 +208,12 @@ def _z_project(x, y):
 # =============================================================================
 
 
+@xf_api
 def angles_to_gvec(
         angs,
         beam_vec=cnst.beam_vec, eta_vec=cnst.eta_vec,
         chi=None, rmat_c=None):
-    """
-    Takes triplets of angles in the beam frame (2*theta, eta, omega)
-    to components of unit G-vectors in the LAB frame.  If the omega
-    values are not trivial (i.e. angs[:, 2] = 0.), then the components
-    are in the SAMPLE frame.  If the crystal rmat is specified and
-    is not the identity, then the components are in the CRYSTAL frame.
-    """
+
     angs = np.atleast_2d(angs)
     nvecs, dim = angs.shape
 
@@ -232,18 +229,12 @@ def angles_to_gvec(
     return _beam_to_crystal(gvec_b, beam_vec=beam_vec, eta_vec=eta_vec,
                             rmat_s=rmat_s, rmat_c=rmat_c)
 
-
+@xf_api
 def angles_to_dvec(
         angs,
         beam_vec=cnst.beam_vec, eta_vec=cnst.eta_vec,
         chi=None, rmat_c=None):
-    """
-    Takes triplets of angles in the beam frame (2*theta, eta, omega)
-    to components of unit diffraction vectors in the LAB frame.  If the
-    omega values are not trivial (i.e. angs[:, 2] = 0.), then the
-    components are in the SAMPLE frame.  If the crystal rmat is specified
-    and is not the identity, then the components are in the CRYSTAL frame.
-    """
+
     angs = np.atleast_2d(angs)
     nvecs, dim = angs.shape
 
@@ -260,73 +251,14 @@ def angles_to_dvec(
                             rmat_s=rmat_s, rmat_c=rmat_c)
 
 
+@xf_api
 def gvec_to_xy(gvec_c,
                rmat_d, rmat_s, rmat_c,
                tvec_d, tvec_s, tvec_c,
                beam_vec=cnst.beam_vec,
                vmat_inv=None,
                bmat=None):
-    """
-    Takes a concatenated list of reciprocal lattice vectors components in the
-    CRYSTAL FRAME to the specified detector-relative frame, subject to the
-    following:
 
-        1) it must be able to satisfy a bragg condition
-        2) the associated diffracted beam must intersect the detector plane
-
-    Parameters
-    ----------
-    gvec_c : array_like
-        Concatenated triplets of G-vector components in the CRYSTAL FRAME.
-    rmat_d : array_like
-        The (3, 3) COB matrix taking components in the
-        DETECTOR FRAME to the LAB FRAME
-    rmat_s : array_like
-        The (3, 3) COB matrix taking components in the
-        SAMPLE FRAME to the LAB FRAME
-    rmat_c : array_like
-        The (3, 3) COB matrix taking components in the
-        CRYSTAL FRAME to the SAMPLE FRAME
-    tvec_d : array_like
-        The (3, ) translation vector connecting LAB FRAME to DETECTOR FRAME
-    tvec_s : array_like
-        The (3, ) translation vector connecting LAB FRAME to SAMPLE FRAME
-    tvec_c : array_like
-        The (3, ) translation vector connecting SAMPLE FRAME to CRYSTAL FRAME
-    beam_vec : array_like, optional
-        The (3, ) incident beam propagation vector components in the LAB FRAME;
-        the default is [0, 0, -1], which is the standard setting.
-    vmat_inv : array_like, optional
-        The (3, 3) matrix of inverse stretch tensor components in the
-        SAMPLE FRAME.  The default is None, which implies a strain-free state
-        (i.e. V = I).
-    bmat : array_like, optional
-        The (3, 3) COB matrix taking components in the
-        RECIPROCAL LATTICE FRAME to the CRYSTAL FRAME; if supplied, it is
-        assumed that the input `gvecs` are G-vector components in the
-        RECIPROCL LATTICE FRAME (the default is None, which implies components
-        in the CRYSTAL FRAME)
-
-    Returns
-    -------
-    array_like
-        The (n, 2) array of [x, y] diffracted beam intersections for each of
-        the n input G-vectors in the DETECTOR FRAME (all Z_d coordinates are 0
-        and excluded).  For each input G-vector that cannot satisfy a Bragg
-        condition or intersect the detector plane, [NaN, Nan] is returned.
-
-    Raises
-    ------
-    AttributeError
-        The ``Raises`` section is a list of all exceptions
-        that are relevant to the interface.
-    ValueError
-        If `param2` is equal to `param1`.
-
-    Notes
-    -----
-
-    """
     ztol = cnst.epsf
 
     # catch 1-d input case and initialize return array with NaNs
@@ -396,60 +328,13 @@ def gvec_to_xy(gvec_c,
     return retval[:, :2]
 
 
+@xf_api
 def xy_to_gvec(xy_d,
                rmat_d, rmat_s,
                tvec_d, tvec_s, tvec_c,
                rmat_b=None,
                distortion=None,
                output_ref=False):
-    """
-    Takes a list cartesian (x, y) pairs in the DETECTOR FRAME and calculates
-    the associated reciprocal lattice (G) vectors and (bragg angle, azimuth)
-    pairs with respect to the specified beam and azimth (eta) reference
-    directions.
-
-    Parameters
-    ----------
-    xy_d : array_like
-        (n, 2) array of n (x, y) coordinates in DETECTOR FRAME
-    rmat_d : array_like
-        (3, 3) COB matrix taking components in the
-        DETECTOR FRAME to the LAB FRAME
-    rmat_s : array_like
-        (3, 3) COB matrix taking components in the
-        SAMPLE FRAME to the LAB FRAME
-    tvec_d : array_like
-        (3, ) translation vector connecting LAB FRAME to DETECTOR FRAME
-    tvec_s : array_like
-        (3, ) translation vector connecting LAB FRAME to SAMPLE FRAME
-    tvec_c : array_like
-        (3, ) translation vector connecting SAMPLE FRAME to CRYSTAL FRAME
-    rmat_b : array_like, optional
-        (3, 3) COB matrix taking components in the BEAM FRAME to the LAB FRAME;
-        defaults to None, which implies the standard setting of identity.
-    distortion : distortion class, optional
-        Default is None
-    output_ref : bool, optional
-        If True, prepends the apparent bragg angle and azimuth with respect to
-        the SAMPLE FRAME (ignoring effect of non-zero tvec_c)
-
-    Returns
-    -------
-    array_like
-        (n, 2) ndarray containing the (tth, eta) pairs associated with each
-        (x, y) associated with gVecs
-    array_like
-        (n, 3) ndarray containing the associated G vector directions in the
-        LAB FRAME
-    array_like, optional
-        if output_ref is True
-
-    Notes
-    -----
-    ???: is there a need to flatten the tvec inputs?
-    ???: include optional wavelength input for returning G with magnitude?
-    ???: is there a need to check that rmat_b is orthogonal if spec'd?
-    """
 
     # catch 1-d input and grab number of input vectors
     xy_d = np.atleast_2d(xy_d)
@@ -493,92 +378,9 @@ def xy_to_gvec(xy_d,
         return (tth, eta), ghat_l
 
 
+@xf_api
 def solve_omega(gvecs, chi, rmat_c, wavelength,
                 bmat=None, vmat_inv=None, rmat_b=None):
-    """
-    For the monochromatic rotation method.
-
-    Solve the for the rotation angle pairs that satisfy the bragg conditions
-    for an input list of G-vector components.
-
-    Parameters
-    ----------
-    gvecs : array_like
-        Concatenated triplets of G-vector components in either the
-        CRYSTAL FRAME or RECIPROCAL FRAME (see optional kwarg `bmat` below).
-        The shape when cast as a 2-d ndarray is (n, 3), representing n vectors.
-    chi : float
-        The inclination angle of the goniometer axis (standard coords)
-    rmat_c : array_like
-        (3, 3) COB matrix taking components in the
-        CRYSTAL FRAME to the SAMPLE FRAME
-    wavelength : float
-        The X-ray wavelength in Angstroms
-    bmat : array_like, optional
-        The (3, 3) COB matrix taking components in the
-        RECIPROCAL LATTICE FRAME to the CRYSTAL FRAME; if supplied, it is
-        assumed that the input `gvecs` are G-vector components in the
-        RECIPROCL LATTICE FRAME (the default is None, which implies components
-        in the CRYSTAL FRAME)
-    vmat_inv : array_like, optional
-        The (3, 3) matrix of inverse stretch tensor components in the
-        SAMPLE FRAME.  The default is None, which implies a strain-free state
-        (i.e. V = I).
-    rmat_b : array_like, optional
-        (3, 3) COB matrix taking components in the BEAM FRAME to the LAB FRAME;
-        defaults to None, which implies the standard setting of identity.
-
-    Returns
-    -------
-    ome0 : array_like
-        The (n, 3) ndarray containing the feasible (tth, eta, ome) triplets for
-        each input hkl (first solution)
-    ome1 : array_like
-        The (n, 3) ndarray containing the feasible (tth, eta, ome) triplets for
-        each input hkl (second solution)
-
-    Notes
-    -----
-    The reciprocal lattice vector, G, will satisfy the the Bragg condition
-    when:
-
-        b.T * G / ||G|| = -sin(theta)
-
-    where b is the incident beam direction (k_i) and theta is the Bragg
-    angle consistent with G and the specified wavelength. The components of
-    G in the lab frame in this case are obtained using the crystal
-    orientation, Rc, and the single-parameter oscillation matrix, Rs(ome):
-
-        Rs(ome) * Rc * G / ||G||
-
-    The equation above can be rearranged to yeild an expression of the form:
-
-        a*sin(ome) + b*cos(ome) = c
-
-    which is solved using the relation:
-
-        a*sin(x) + b*cos(x) = sqrt(a**2 + b**2) * sin(x + alpha)
-
-        --> sin(x + alpha) = c / sqrt(a**2 + b**2)
-
-    where:
-
-        alpha = arctan2(b, a)
-
-     The solutions are:
-
-                /
-                |       arcsin(c / sqrt(a**2 + b**2)) - alpha
-            x = <
-                |  pi - arcsin(c / sqrt(a**2 + b**2)) - alpha
-                \
-
-    There is a double root in the case the reflection is tangent to the
-    Debye-Scherrer cone (c**2 = a**2 + b**2), and no solution if the
-    Laue condition cannot be satisfied (filled with NaNs in the results
-    array here)
-    """
-
     gvecs = np.atleast_2d(gvecs)
 
     # sin and cos of the oscillation axis tilt
@@ -681,13 +483,8 @@ def solve_omega(gvecs, chi, rmat_c, wavelength,
 # UTILITY FUNCTIONS
 # =============================================================================
 
-
+@xf_api
 def angular_difference(ang_list0, ang_list1, units=cnst.angular_units):
-    """
-    Do the proper (acute) angular difference in the context of a branch cut.
-
-    *) Default angular range is [-pi, pi]
-    """
     period = cnst.period_dict[units]
     # take difference as arrays
     diffAngles = np.atleast_1d(ang_list0) - np.atleast_1d(ang_list1)
@@ -695,14 +492,8 @@ def angular_difference(ang_list0, ang_list1, units=cnst.angular_units):
     return abs(np.remainder(diffAngles + 0.5*period, period) - 0.5*period)
 
 
+@xf_api
 def map_angle(ang, *args, **kwargs):
-    """
-    Utility routine to map an angle into a specified period
-
-    actual function is map_angle(ang[, range], units=cnst.angular_units).
-    range is optional and defaults to the appropriate angle for the unit
-    centered on 0.
-    """
     units = cnst.angular_units
     period = cnst.period_dict[units]
 
@@ -752,11 +543,8 @@ def map_angle(ang, *args, **kwargs):
         retval = np.mod(ang + 0.5*period, period) - 0.5*period
     return retval
 
-
+@xf_api
 def row_norm(a):
-    """
-    normalize array of row vectors (vstacked, axis = 1)
-    """
     if len(a.shape) > 2:
         raise RuntimeError(
                 "incorrect shape: arg must be 1-d or 2-d, yours is %d"
@@ -765,10 +553,8 @@ def row_norm(a):
     return np.sqrt(sum(np.asarray(a)**2, 1))
 
 
+@xf_api
 def unit_vector(a):
-    """
-    normalize an array of row vectors (vstacked, axis=0)
-    """
     a = np.atleast_2d(a)
     n = a.shape[1]
 
@@ -779,15 +565,8 @@ def unit_vector(a):
     return (a/nrm).squeeze()
 
 
+@xf_api
 def make_sample_rmat(chi, ome):
-    """
-    Make SAMPLE frame rotation matrices as composition of
-    rotation of ome about the axis
-
-    [0., cos(chi), sin(chi)]
-
-    in the lab frame
-    """
     # angle chi about LAB X
     cchi = np.cos(chi)
     schi = np.sin(chi)
@@ -807,10 +586,8 @@ def make_sample_rmat(chi, ome):
     return rmat_s
 
 
+@xf_api
 def make_rmat_of_expmap(exp_map):
-    """
-    Calculates the rotation matrix from an exponential map
-    """
     phi = np.sqrt(
         exp_map[0]*exp_map[0]
         + exp_map[1]*exp_map[1]
@@ -831,20 +608,14 @@ def make_rmat_of_expmap(exp_map):
     return rmat
 
 
+@xf_api
 def make_binary_rmat(n):
-    """
-    make a binary rotation matrix about the specified axis
-    """
     assert len(n) == 3, 'Axis input does not have 3 components'
     return 2*np.outer(n, n) - cnst.identity_3x3
 
 
+@xf_api
 def make_beam_rmat(bvec_l, evec_l):
-    """
-    make eta basis COB matrix with beam antiparallel with Z
-
-    takes components from BEAM frame to LAB
-    """
     # normalize input
     bhat_l = unit_vector(bvec_l)
     ehat_l = unit_vector(evec_l)
@@ -861,16 +632,8 @@ def make_beam_rmat(bvec_l, evec_l):
     return np.vstack([Xe, Ye, -bhat_l])
 
 
+@xf_api
 def angles_in_range(angles, starts, stops, degrees=True):
-    """Determine whether angles lie in or out of specified ranges
-
-    *angles* - a list/array of angles
-    *starts* - a list of range starts
-    *stops* - a list of range stops
-
-    OPTIONAL ARGS:
-    *degrees* - [True] angles & ranges in degrees (or radians)
-    """
     tau = 360.0 if degrees else 2*np.pi
     nw = len(starts)
     na = len(angles)
@@ -886,14 +649,8 @@ def angles_in_range(angles, starts, stops, degrees=True):
     return in_range
 
 
+@xf_api
 def validate_angle_ranges(ang_list, startAngs, stopAngs, ccw=True):
-    """
-    A better way to go.  find out if an angle is in the range
-    CCW or CW from start to stop
-
-    There is, of course, an ambigutiy if the start and stop angle are
-    the same; we treat them as implying 2*pi having been mapped
-    """
     # Prefer ravel over flatten because flatten never skips the copy
     ang_list = np.asarray(ang_list).ravel()
     startAngs = np.asarray(startAngs).ravel()
@@ -986,26 +743,8 @@ def validate_angle_ranges(ang_list, startAngs, stopAngs, ccw=True):
     return reflInRange
 
 
+@xf_api
 def rotate_vecs_about_axis(angle, axis, vecs):
-    """
-    Rotate vectors about an axis
-
-    INPUTS
-    *angle* - array of angles (len == 1 or n)
-    *axis*  - array of unit vectors (shape == (3, 1) or (3, n))
-    *vec*   - array of vectors to be rotated (shape = (3, n))
-
-    Quaternion formula:
-    if we split v into parallel and perpedicular components w.r.t. the
-    axis of quaternion q,
-
-        v = a + n
-
-    then the action of rotating the vector dot(R(q), v) becomes
-
-        v_rot = (q0**2 - |q|**2)(a + n) + 2*dot(q, a)*q + 2*q0*cross(q, n)
-
-    """
     angle = np.atleast_1d(angle)
     # nvecs = vecs.shape[1]  # assume column vecs
 
@@ -1048,33 +787,8 @@ def rotate_vecs_about_axis(angle, axis, vecs):
     return v_rot
 
 
+@xf_api
 def quat_product_matrix(q, mult='right'):
-    """
-    Form 4 x 4 array to perform the quaternion product
-
-    USAGE
-        qmat = quatProductMatrix(q, mult='right')
-
-    INPUTS
-        1) quats is (4,), an iterable representing a unit quaternion
-           horizontally concatenated
-        2) mult is a keyword arg, either 'left' or 'right', denoting
-           the sense of the multiplication:
-
-                       / quatProductMatrix(h, mult='right') * q
-           q * h  --> <
-                       \ quatProductMatrix(q, mult='left') * h
-
-    OUTPUTS
-        1) qmat is (4, 4), the left or right quaternion product
-           operator
-
-    NOTES
-       *) This function is intended to replace a cross-product based
-          routine for products of quaternions with large arrays of
-          quaternions (e.g. applying symmetries to a large set of
-          orientations).
-    """
     if mult == 'right':
         qmat = np.array([[ q[0], -q[1], -q[2], -q[3]],
                          [ q[1],  q[0],  q[3], -q[2]],
@@ -1090,10 +804,8 @@ def quat_product_matrix(q, mult='right'):
     return qmat
 
 
+@xf_api
 def quat_distance(q1, q2, qsym):
-    """
-    find the distance between two unit quaternions under symmetry group
-    """
     # qsym from PlaneData objects are (4, nsym)
     # convert symmetries to (4, 4) qprod matrices
     nsym = qsym.shape[1]
