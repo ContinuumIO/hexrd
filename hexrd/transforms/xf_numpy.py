@@ -32,7 +32,7 @@ from numpy import float_ as npfloat
 from numpy import int_ as npint
 
 # from hexrd import constants as cnst
-import constants as cnst
+import hexrd.constants as cnst
 
 
 # =============================================================================
@@ -43,7 +43,7 @@ import constants as cnst
 #      and multiply through?
 def _beam_to_crystal(vecs, rmat_b=None, rmat_s=None, rmat_c=None):
     """
-    Helper function to take vectors definced in the BEAM frame through LAB
+    Helper function to take vectors defined in the BEAM frame through LAB
     to either SAMPLE or CRYSTAL
 
     """
@@ -208,7 +208,7 @@ def _z_project(x, y):
 
 def angles_to_gvec(
         angs,
-        beam_vec=cnst.ref_beam_vec, eta_vec=cnst.ref_eta_vec,
+        beam_vec=cnst.beam_vec, eta_vec=cnst.eta_vec,
         chi=None, rmat_c=None):
     """
     Takes triplets of angles in the beam frame (2*theta, eta, omega)
@@ -235,7 +235,7 @@ def angles_to_gvec(
 
 def angles_to_dvec(
         angs,
-        beam_vec=cnst.ref_beam_vec, eta_vec=cnst.ref_eta_vec,
+        beam_vec=cnst.beam_vec, eta_vec=cnst.eta_vec,
         chi=None, rmat_c=None):
     """
     Takes triplets of angles in the beam frame (2*theta, eta, omega)
@@ -263,7 +263,7 @@ def angles_to_dvec(
 def gvec_to_xy(gvec_c,
                rmat_d, rmat_s, rmat_c,
                tvec_d, tvec_s, tvec_c,
-               beam_vec=cnst.ref_beam_vec,
+               beam_vec=cnst.beam_vec,
                vmat_inv=None,
                bmat=None):
     """
@@ -456,7 +456,7 @@ def xy_to_gvec(xy_d,
     npts = len(xy_d)
 
     # need beam vector
-    bhat_l = cnst.ref_beam_vec
+    bhat_l = cnst.beam_vec
     if rmat_b is not None:
         bhat_l = -rmat_b[:, 2]
 
@@ -513,7 +513,7 @@ def solve_omega(gvecs, chi, rmat_c, wavelength,
         (3, 3) COB matrix taking components in the
         CRYSTAL FRAME to the SAMPLE FRAME
     wavelength : float
-        The X-ray wavelength in Ångstroms
+        The X-ray wavelength in Angstroms
     bmat : array_like, optional
         The (3, 3) COB matrix taking components in the
         RECIPROCAL LATTICE FRAME to the CRYSTAL FRAME; if supplied, it is
