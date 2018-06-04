@@ -9,6 +9,7 @@ execute the scripts forcing those conditions to be evaluated and raise errors
 if they are not met. This should always be optional and incur on no overhead
 unless enabled, only to be used for debugging and validation purposes.
 """
+from __future__ import absolute_import, print_function
 
 import os
 import functools
@@ -28,10 +29,14 @@ class DEF_Func(object):
         """The keyword arguments the function is supposed to have"""
         return None
 
-    def _PRECOND(*arg, **kwarg):
+    @classmethod
+    def _PRECOND(cls, *arg, **kwarg):
+        print("PRECOND (", cls.__class__.__name__,")")
         pass
 
-    def _POSTCOND(results, *args, **kwargs):
+    @classmethod
+    def _POSTCOND(cls, results, *args, **kwargs):
+        print("PRECOND (", cls.__class__.__name__,")")
         pass
 
 
@@ -523,7 +528,7 @@ def xf_api(f):
     # At this point use a wrapper that calls pre and post conditions if checking
     # is enabled, otherwise leave the function "as is".
     if CHECK_API:
-        @functools.wraps(f, assigned={__doc__: fn_def.__doc__})
+        @functools.wraps(f, assigned={"__doc__": fn_def.__doc__})
         def wrapper(*args, **kwargs):
             fn_def._PRECOND(*args, **kwargs)
             result = f(*args, **kwargs)

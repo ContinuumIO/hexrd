@@ -11,3 +11,4 @@ hexrd.egg-info
 *.*~
 *#
 .#*
+.pytest_cache
