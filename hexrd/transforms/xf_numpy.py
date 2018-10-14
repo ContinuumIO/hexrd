@@ -223,10 +223,14 @@ def angles_to_gvec(
         [np.cos(0.5*angs[:, 0]) * np.sin(angs[:, 1])],
         [np.sin(0.5*angs[:, 0])]]).T
 
+    # need rmat_b
+    rmat_b = make_beam_rmat(beam_vec, eta_vec)
+    
+    # handle sample frames(s)
     rmat_s = None
     if dim > 2:
         rmat_s = _rmat_s_helper(angs[:, 2], chi=chi)
-    return _beam_to_crystal(gvec_b, beam_vec=beam_vec, eta_vec=eta_vec,
+    return _beam_to_crystal(gvec_b, rmat_b=rmat_b,
                             rmat_s=rmat_s, rmat_c=rmat_c)
 
 @xf_api
@@ -244,6 +248,10 @@ def angles_to_dvec(
         [np.sin(angs[:, 0]) * np.sin(angs[:, 1])],
         [-np.cos(angs[:, 0])]]).T
 
+    # need rmat_b
+    rmat_b = make_beam_rmat(beam_vec, eta_vec)
+
+    # handle sample frame(s)
     rmat_s = None
     if dim > 2:
         rmat_s = _rmat_s_helper(angs[:, 2], chi=chi)
@@ -344,6 +352,8 @@ def xy_to_gvec(xy_d,
     bhat_l = cnst.beam_vec
     if rmat_b is not None:
         bhat_l = -rmat_b[:, 2]
+    else:
+        rmat_b = cnst.identity_3x3
 
     # if a distortion function is supplied, apply unwarping
     if distortion is not None:
@@ -356,7 +366,7 @@ def xy_to_gvec(xy_d,
     P2_l = np.dot(P2_d, rmat_d.T) + tvec_d  # inputs in LAB FRAME
     P0_l = np.dot(tvec_c, rmat_s.T) + tvec_s  # origin of CRYSTAL FRAME
 
-    # diffraction unit vector components in LAB FRAME
+    # diffraction unit vector components in LAB FRAME ans BEAM FRAME
     dhat_l = unit_vector(P2_l - P0_l)
     dhat_b = np.dot(dhat_l, rmat_b)
 
