@@ -8,16 +8,40 @@ Pre and Post conditions will be in the form of code, there will be means to
 execute the scripts forcing those conditions to be evaluated and raise errors
 if they are not met. This should always be optional and incur on no overhead
 unless enabled, only to be used for debugging and validation purposes.
+
+Checking of signature definitions has been added. This happens if CHECK_API is
+enabled (via the HEXRD_XF_CHECK environment variable). This is implemented via
+the signature method in inspect (Python 3.3+). If not available, it falls back
+to the backport in funcsigs. If unavailable, CHECK_API is disabled.
 """
 from __future__ import absolute_import, print_function
 
 import os
 import functools
 
+from .. import constants as cnst
+
 CHECK_API = os.getenv("HEXRD_XF_CHECK")
+try:
+    from inspect import signature as get_signature
+except ImportError:
+    try:
+        from funcsigs import signature as get_signature
+    except:
+        import warnings
+
+        warnings.warn("Failed to import from inspect/funcsigs."
+                      "Transforms API signature checking disabled.")
+        get_signature = None
+
 
 class DEF_Func(object):
     """Documentation to use for the function"""
+
+    def _signature():
+        """The signature of this method defines the one for the API
+        including default values."""
+        pass
 
     @property
     def _args(self):
@@ -51,7 +75,17 @@ class DEF_angles_to_gvec(DEF_Func):
     values are not trivial (i.e. angs[:, 2] = 0.), then the components
     are in the SAMPLE frame.  If the crystal rmat is specified and
     is not the identity, then the components are in the CRYSTAL frame.
+
+    default beam_vec is defined in hexrd.constants.beam_vec
+    default eta_vec is defined in hexrd.constants.eta_vec
     """
+    def _signature(angs,
+                   beam_vec=None,
+                   eta_vec=None,
+                   chi=None,
+                   rmat_c=None):
+        pass
+
     @property
     def _args(self):
         return ('angs',)
@@ -68,7 +102,17 @@ class DEF_angles_to_dvec(DEF_Func):
     omega values are not trivial (i.e. angs[:, 2] = 0.), then the
     components are in the SAMPLE frame.  If the crystal rmat is specified
     and is not the identity, then the components are in the CRYSTAL frame.
+
+    default beam_vec is defined in hexrd.constants.beam_vec
+    default eta_vec is defined in hexrd.constants.eta_vec
     """
+    def _signature(angs,
+                   beam_vec=None,
+                   eta_vec=None,
+                   chi=None,
+                   rmat_c=None):
+        pass
+
     @property
     def _args(self):
         return ('angs',)
@@ -140,6 +184,14 @@ class DEF_gvec_to_xy(DEF_Func):
     -----
 
     """
+    def _signature(gvec_c,
+                   rmat_d, rmat_s, rmat_c,
+                   tvec_d, tvec_s, tvec_c,
+                   beam_vec=None,
+                   vmat_inv=None,
+                   bmat=None):
+        pass
+
     @property
     def _args(self):
         return ('gvec_c', 'rmat_d', 'rmat_s', 'rmat_c', 'tvec_d', 'tvec_s',
@@ -199,6 +251,13 @@ class DEF_xy_to_gvec(DEF_Func):
     ???: include optional wavelength input for returning G with magnitude?
     ???: is there a need to check that rmat_b is orthogonal if spec'd?
     """
+    def _signature(xy_d,
+                   rmat_d, rmat_s,
+                   tvec_d, tvec_s, tvec_c,
+                   rmat_b=None,
+                   distortion=None,
+                   output_ref=False):
+        pass
 
     @property
     def _args(self):
@@ -293,6 +352,10 @@ class DEF_solve_omega(DEF_Func):
     Laue condition cannot be satisfied (filled with NaNs in the results
     array here)
     """
+    def _signature(gvecs, chi, rmat_c, wavelength,
+                   bmat=None, vmat_inv=None, rmat_b=None):
+        pass
+
     @property
     def _args(self):
         return ('gvecs', 'chi', 'rmat_c', 'wavelength')
@@ -312,6 +375,9 @@ class DEF_angular_difference(DEF_Func):
 
     *) Default angular range is [-pi, pi]
     """
+    def _signature(ang_list0, ang_list1, units=cnst.angular_units):
+        pass
+
     @property
     def _args(self):
         return ('ang_list0', 'ang_list1')
@@ -328,7 +394,13 @@ class DEF_map_angle(DEF_Func):
     actual function is map_angle(ang[, range], units=cnst.angular_units).
     range is optional and defaults to the appropriate angle for the unit
     centered on 0.
+
+    accepted units are: 'radians' and 'degrees'
     """
+
+    def _signature(ang, range=None, units=cnst.angular_units):
+        pass
+
     @property
     def _args(self):
         return ('ang',)
@@ -342,6 +414,9 @@ class DEF_row_norm(DEF_Func):
     """
     normalize array of row vectors (vstacked, axis = 1)
     """
+    def _signature(a):
+        pass
+
     @property
     def _args(self):
         return ('a')
@@ -351,9 +426,12 @@ class DEF_unit_vector(DEF_Func):
     """
     normalize an array of row vectors (vstacked, axis=0)
     """
+    def _signature(vec_in):
+        pass
+
     @property
     def _args(self):
-        return('a')
+        return('vec_in')
 
 
 class DEF_make_sample_rmat(DEF_Func):
@@ -365,6 +443,9 @@ class DEF_make_sample_rmat(DEF_Func):
 
     in the lab frame
     """
+    def _signature(chi, ome):
+        pass
+
     @property
     def _args(self):
         return ('chi', 'ome')
@@ -374,6 +455,9 @@ class DEF_make_rmat_of_expmap(DEF_Func):
     """
     Calculates the rotation matrix from an exponential map
     """
+    def _signature(exp_map):
+        pass
+
     @property
     def _args(self):
         return ('exp_map',)
@@ -383,9 +467,12 @@ class DEF_make_binary_rmat(DEF_Func):
     """
     make a binary rotation matrix about the specified axis
     """
+    def _signature(axis):
+        pass
+
     @property
     def _args(self):
-        return ('n',)
+        return ('axis',)
 
 
 class DEF_make_beam_rmat(DEF_Func):
@@ -394,6 +481,9 @@ class DEF_make_beam_rmat(DEF_Func):
 
     takes components from BEAM frame to LAB
     """
+    def _signature(bvec_l, evec_l):
+        pass
+
     @property
     def _args(self):
         return ('bvec_l', 'evec_l')
@@ -409,6 +499,9 @@ class DEF_angles_in_range(DEF_Func):
     OPTIONAL ARGS:
     *degrees* - [True] angles & ranges in degrees (or radians)
     """
+    def _signature(angles, starts, stops, degrees=True):
+        pass
+
     @property
     def _args(self):
         return ('angles', 'starts', 'stops')
@@ -425,9 +518,12 @@ class DEF_validate_angle_ranges(DEF_Func):
     There is, of course, an ambigutiy if the start and stop angle are
     the same; we treat them as implying 2*pi having been mapped
     """
+    def _signature(ang_list, start_angs, stop_angs, ccw=True):
+        pass
+
     @property
     def _args(self):
-        return ('ang_list', 'startAngs', 'stopAngs')
+        return ('ang_list', 'start_angs', 'stop_angs')
 
     @property
     def _kwargs(self):
@@ -454,6 +550,9 @@ class DEF_rotate_vecs_about_axis(DEF_Func):
         v_rot = (q0**2 - |q|**2)(a + n) + 2*dot(q, a)*q + 2*q0*cross(q, n)
 
     """
+    def _signature(angle, axis, vecs):
+        pass
+
     @property
     def _args(self):
         return ('angle', 'axis', 'vecs')
@@ -486,6 +585,9 @@ class DEF_quat_product_matrix(DEF_Func):
           quaternions (e.g. applying symmetries to a large set of
           orientations).
     """
+    def _signature(q, mult='right'):
+        pass
+
     @property
     def _args(self):
         return ('q',)
@@ -499,6 +601,9 @@ class DEF_quat_distance(DEF_Func):
     """
     find the distance between two unit quaternions under symmetry group
     """
+    def _signature(q1, q2, qsym):
+        pass
+
     @property
     def _args(self):
         return ('q1', 'q2', 'qsym')
@@ -515,15 +620,33 @@ def xf_api(f):
     try:
         fn_def = globals()['DEF_'+api_call]
     except KeyError:
-        raise RuntimeError("xf_api function '%s' doesn't have a definition.")
+        # This happens if there is no definition for the decorated function
+        raise RuntimeError("'%s' definition not found." % api_call)
     
     try:
         if not (isinstance(fn_def.__doc__, basestring) and
                 callable(fn_def._PRECOND) and
-                callable(fn_def._POSTCOND)):
+                callable(fn_def._POSTCOND) and
+                callable(fn_def._signature)):
             raise Exception()
     except Exception:
-        raise RuntimeError("xf_api definition for function '%s' seems incorrect.")
+        # A valid definition requires a string doc, and callable _PRECOND, 
+        # _POSTCOND and _signature.
+        #
+        # __doc__ will become the decorated function's documentation.
+        # _PRECOND will be run on every call with args and kwargs
+        # _POSTCOND will be run on every call with result, args and kwargs
+        # _signature will be used to enforce a signature on implementations.
+        #
+        # _PRECOND and _POSTCOND will only be called if CHECK_API is enabled,
+        # as they will slow down execution.
+        raise RuntimeError("'%s' definition error." % api_call)
+
+    # Sanity check: make sure the decorated function has the expected signature.
+    if get_signature is not None:
+        # Check that the function has the right signature
+        if get_signature(fn_def._signature) != get_signature(f):
+            raise RuntimeError("'%s' signature mismatch." % api_call)
 
     # At this point use a wrapper that calls pre and post conditions if checking
     # is enabled, otherwise leave the function "as is".

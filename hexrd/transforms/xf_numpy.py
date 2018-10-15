@@ -33,8 +33,7 @@ import numpy as np
 from numpy import float_ as npfloat
 from numpy import int_ as npint
 
-# from hexrd import constants as cnst
-import hexrd.constants as cnst
+from .. import constants as cnst
 from .transforms_definitions import xf_api
 
 # =============================================================================
@@ -211,8 +210,11 @@ def _z_project(x, y):
 @xf_api
 def angles_to_gvec(
         angs,
-        beam_vec=cnst.beam_vec, eta_vec=cnst.eta_vec,
+        beam_vec=None, eta_vec=None,
         chi=None, rmat_c=None):
+
+    beam_vec = beam_vec if beam_vec is not None else const.beam_vec
+    eta_vec = eta_vec if eta_vec is not None else const.eta_vec
 
     angs = np.atleast_2d(angs)
     nvecs, dim = angs.shape
@@ -236,8 +238,11 @@ def angles_to_gvec(
 @xf_api
 def angles_to_dvec(
         angs,
-        beam_vec=cnst.beam_vec, eta_vec=cnst.eta_vec,
+        beam_vec=None, eta_vec=None,
         chi=None, rmat_c=None):
+
+    beam_vec = beam_vec if beam_vec is not None else cnst.beam_vec
+    eta_vec = eta_vec if eta_vec is not None else cnst.eta_vec
 
     angs = np.atleast_2d(angs)
     nvecs, dim = angs.shape
@@ -263,9 +268,11 @@ def angles_to_dvec(
 def gvec_to_xy(gvec_c,
                rmat_d, rmat_s, rmat_c,
                tvec_d, tvec_s, tvec_c,
-               beam_vec=cnst.beam_vec,
+               beam_vec=None,
                vmat_inv=None,
                bmat=None):
+
+    beam_vec = beam_vec if beam_vec is not None else cnst.beam_vec
 
     ztol = cnst.epsf
 
@@ -503,30 +510,18 @@ def angular_difference(ang_list0, ang_list1, units=cnst.angular_units):
 
 
 @xf_api
-def map_angle(ang, *args, **kwargs):
-    units = cnst.angular_units
-    period = cnst.period_dict[units]
-
-    kwargKeys = kwargs.keys()
-    for iArg in range(len(kwargKeys)):
-        if kwargKeys[iArg] == 'units':
-            units = kwargs[kwargKeys[iArg]]
-        else:
-            raise RuntimeError(
-                    "Unknown keyword argument: " + str(kwargKeys[iArg])
-                )
+def map_angle(ang, range=None, units=cnst.angular_units):
 
     try:
-        period = cnst.period_dict[units.lower()]
-    except(KeyError):
-        raise RuntimeError(
-                "unknown angular units: " + str(kwargs[kwargKeys[iArg]])
-            )
+        period = cnst.period_dict(units)
+    except KeyError:
+        raise ValueError('Accepted units: %s'.format(','.join(cnst.period_dict.keys())))
+
 
     ang = np.atleast_1d(npfloat(ang))
 
-    # if we have a specified angular range, use that
-    if len(args) > 0:
+    # if we have a specified angular range, use it
+    if range is not None:
         angRange = np.atleast_1d(npfloat(args[0]))
 
         # divide of multiples of period
@@ -549,6 +544,11 @@ def map_angle(ang, *args, **kwargs):
             ubi = ang > ub
             pass
         retval = ang
+        # shouldn't all this be equivalent to:
+        #   retval = np.mod(ang - lb, period) + lb ????
+        # note the particular case below for range (-0.5*period, +0.5*period)
+        # where lb would be -0.5*period.
+
     else:
         retval = np.mod(ang + 0.5*period, period) - 0.5*period
     return retval
@@ -564,8 +564,8 @@ def row_norm(a):
 
 
 @xf_api
-def unit_vector(a):
-    a = np.atleast_2d(a)
+def unit_vector(vec_in):
+    a = np.atleast_2d(vec_in)
     n = a.shape[1]
 
     # calculate row norms and prevent divide by zero
@@ -619,9 +619,9 @@ def make_rmat_of_expmap(exp_map):
 
 
 @xf_api
-def make_binary_rmat(n):
-    assert len(n) == 3, 'Axis input does not have 3 components'
-    return 2*np.outer(n, n) - cnst.identity_3x3
+def make_binary_rmat(axis):
+    assert len(axis) == 3, 'Axis input does not have 3 components'
+    return 2*np.outer(axis, axis) - cnst.identity_3x3
 
 
 @xf_api
@@ -660,14 +660,14 @@ def angles_in_range(angles, starts, stops, degrees=True):
 
 
 @xf_api
-def validate_angle_ranges(ang_list, startAngs, stopAngs, ccw=True):
+def validate_angle_ranges(ang_list, start_angs, stop_angs, ccw=True):
     # Prefer ravel over flatten because flatten never skips the copy
     ang_list = np.asarray(ang_list).ravel()
-    startAngs = np.asarray(startAngs).ravel()
-    stopAngs = np.asarray(stopAngs).ravel()
+    startAngs = np.asarray(start_angs).ravel()
+    stopAngs = np.asarray(stop_angs).ravel()
 
-    n_ranges = len(startAngs)
-    assert len(stopAngs) == n_ranges, \
+    n_ranges = len(start_angs)
+    assert len(stop_angs) == n_ranges, \
         "length of min and max angular limits must match!"
 
     # to avoid warnings in >=, <= later down, mark nans;
