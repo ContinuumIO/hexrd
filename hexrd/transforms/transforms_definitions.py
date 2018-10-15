@@ -86,14 +86,6 @@ class DEF_angles_to_gvec(DEF_Func):
                    rmat_c=None):
         pass
 
-    @property
-    def _args(self):
-        return ('angs',)
-
-    @property
-    def _kwargs(self):
-        return ('beam_vec', 'eta_vec', 'chi', 'rmat_c')
-
 
 class DEF_angles_to_dvec(DEF_Func):
     """
@@ -112,14 +104,6 @@ class DEF_angles_to_dvec(DEF_Func):
                    chi=None,
                    rmat_c=None):
         pass
-
-    @property
-    def _args(self):
-        return ('angs',)
-
-    @property
-    def _kwargs(self):
-        return ('beam_vec', 'eta_vec', 'chi', 'rmat_c')
 
 
 class DEF_gvec_to_xy(DEF_Func):
@@ -192,15 +176,6 @@ class DEF_gvec_to_xy(DEF_Func):
                    bmat=None):
         pass
 
-    @property
-    def _args(self):
-        return ('gvec_c', 'rmat_d', 'rmat_s', 'rmat_c', 'tvec_d', 'tvec_s',
-                'tvec_c')
-
-    @property
-    def _kwargs(self):
-        return ('beam_vec', 'vmat_inv', 'bmat')
-
 
 class DEF_xy_to_gvec(DEF_Func):
     """
@@ -258,14 +233,6 @@ class DEF_xy_to_gvec(DEF_Func):
                    distortion=None,
                    output_ref=False):
         pass
-
-    @property
-    def _args(self):
-        return ('xy_d', 'rmat_d', 'rmat_s', 'tvec_d', 'tvec_s', 'tvec_c')
-
-    @property
-    def _kwargs(self):
-        return ('rmat_b', 'distortion', 'output_ref') 
 
 
 class DEF_solve_omega(DEF_Func):
@@ -356,14 +323,6 @@ class DEF_solve_omega(DEF_Func):
                    bmat=None, vmat_inv=None, rmat_b=None):
         pass
 
-    @property
-    def _args(self):
-        return ('gvecs', 'chi', 'rmat_c', 'wavelength')
-
-    @property
-    def _kwargs(self):
-        return ('bmat', 'vmat_inv', 'rmat_b')
-
 
 # ==============================================================================
 # UTILITY FUNCTIONS API
@@ -377,14 +336,6 @@ class DEF_angular_difference(DEF_Func):
     """
     def _signature(ang_list0, ang_list1, units=cnst.angular_units):
         pass
-
-    @property
-    def _args(self):
-        return ('ang_list0', 'ang_list1')
-
-    @property
-    def _kwargs(self):
-        return ('units',)
 
 
 class DEF_map_angle(DEF_Func):
@@ -401,14 +352,6 @@ class DEF_map_angle(DEF_Func):
     def _signature(ang, range=None, units=cnst.angular_units):
         pass
 
-    @property
-    def _args(self):
-        return ('ang',)
-
-    @property
-    def _kwargs(self):
-        return ('range', 'units')
-
 
 class DEF_row_norm(DEF_Func):
     """
@@ -417,21 +360,15 @@ class DEF_row_norm(DEF_Func):
     def _signature(a):
         pass
 
-    @property
-    def _args(self):
-        return ('a')
-
 
 class DEF_unit_vector(DEF_Func):
     """
     normalize an array of row vectors (vstacked, axis=0)
+
+    guaranteed to work for 1d and 2d arrays.
     """
     def _signature(vec_in):
         pass
-
-    @property
-    def _args(self):
-        return('vec_in')
 
 
 class DEF_make_sample_rmat(DEF_Func):
@@ -446,10 +383,6 @@ class DEF_make_sample_rmat(DEF_Func):
     def _signature(chi, ome):
         pass
 
-    @property
-    def _args(self):
-        return ('chi', 'ome')
-
 
 class DEF_make_rmat_of_expmap(DEF_Func):
     """
@@ -458,10 +391,6 @@ class DEF_make_rmat_of_expmap(DEF_Func):
     def _signature(exp_map):
         pass
 
-    @property
-    def _args(self):
-        return ('exp_map',)
-
 
 class DEF_make_binary_rmat(DEF_Func):
     """
@@ -469,10 +398,6 @@ class DEF_make_binary_rmat(DEF_Func):
     """
     def _signature(axis):
         pass
-
-    @property
-    def _args(self):
-        return ('axis',)
 
 
 class DEF_make_beam_rmat(DEF_Func):
@@ -483,10 +408,6 @@ class DEF_make_beam_rmat(DEF_Func):
     """
     def _signature(bvec_l, evec_l):
         pass
-
-    @property
-    def _args(self):
-        return ('bvec_l', 'evec_l')
 
 
 class DEF_angles_in_range(DEF_Func):
@@ -502,14 +423,6 @@ class DEF_angles_in_range(DEF_Func):
     def _signature(angles, starts, stops, degrees=True):
         pass
 
-    @property
-    def _args(self):
-        return ('angles', 'starts', 'stops')
-
-    @property
-    def _kwargs(self):
-        return ('degrees',)
-
 
 class DEF_validate_angle_ranges(DEF_Func):
     """
@@ -520,14 +433,6 @@ class DEF_validate_angle_ranges(DEF_Func):
     """
     def _signature(ang_list, start_angs, stop_angs, ccw=True):
         pass
-
-    @property
-    def _args(self):
-        return ('ang_list', 'start_angs', 'stop_angs')
-
-    @property
-    def _kwargs(self):
-        return ('ccw',)
 
 
 class DEF_rotate_vecs_about_axis(DEF_Func):
@@ -552,10 +457,6 @@ class DEF_rotate_vecs_about_axis(DEF_Func):
     """
     def _signature(angle, axis, vecs):
         pass
-
-    @property
-    def _args(self):
-        return ('angle', 'axis', 'vecs')
 
 
 class DEF_quat_product_matrix(DEF_Func):
@@ -588,14 +489,6 @@ class DEF_quat_product_matrix(DEF_Func):
     def _signature(q, mult='right'):
         pass
 
-    @property
-    def _args(self):
-        return ('q',)
-
-    @property
-    def _kwargs(self):
-        return ('mult',)
-
 
 class DEF_quat_distance(DEF_Func):
     """
@@ -603,10 +496,6 @@ class DEF_quat_distance(DEF_Func):
     """
     def _signature(q1, q2, qsym):
         pass
-
-    @property
-    def _args(self):
-        return ('q1', 'q2', 'qsym')
 
 
 # ==============================================================================
