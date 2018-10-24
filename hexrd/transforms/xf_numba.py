@@ -35,8 +35,17 @@ from numpy import int_ as npint
 
 # from hexrd import constants as cnst
 from .. import constants as cnst
+from .transforms_definitions import xf_api, get_signature
 
 import numba
+
+# Use the following decorator instead of numba.jit for interface functions.
+# This is so we can patch certain features.
+def xfapi_jit(fn):
+    out = numba.jit(fn)
+    out.__signature__ = get_signature(fn)
+
+    return out
 
 
 def _beam_to_crystal(vecs, rmat_b=None, rmat_s=None, rmat_c=None):
@@ -81,15 +90,18 @@ def _beam_to_crystal(vecs, rmat_b=None, rmat_s=None, rmat_c=None):
 
 
 @numba.njit
-def _angles_to_gvec_helper(angs, out):
+def _angles_to_gvec_helper(angs):
     """
     angs are vstacked [2*theta, eta, omega]
 
-    gvec_b = np.vstack([[np.cos(0.5*angs[:, 0]) * np.cos(angs[:, 1])],
-                        [np.cos(0.5*angs[:, 0]) * np.sin(angs[:, 1])],
-                        [np.sin(0.5*angs[:, 0])]])
+    This should be equivalent to the one-liner numpy version:
+    out = np.vstack([[np.cos(0.5*angs[:, 0]) * np.cos(angs[:, 1])],
+                     [np.cos(0.5*angs[:, 0]) * np.sin(angs[:, 1])],
+                     [np.sin(0.5*angs[:, 0])]])
+
+    although much faster,
     """
-    n = angs.shape[0]
+    out = np.empty((nvecs, 3))
     for i in range(n):
         ca0 = np.cos(0.5*angs[i, 0])
         sa0 = np.sin(0.5*angs[i, 0])
@@ -98,6 +110,8 @@ def _angles_to_gvec_helper(angs, out):
         out[i, 0] = ca0 * ca1
         out[i, 1] = ca0 * sa1
         out[i, 2] = sa0
+
+    return out
 
 
 @numba.njit
@@ -143,35 +157,42 @@ def _rmat_s_helper(chi, omes, out):
         out[i, 2, 2] = cx * cw
 
 
-def angles_to_gvec(angs, rmat_b=None, chi=None, rmat_c=None):
+@xf_api
+def angles_to_gvec(angs,
+                   beam_vec=None, eta_vec=None,
+                   chi=None, rmat_c=None):
+    """Note about this implementation:
+    This used to take rmat_b instead of the pair beam_vec, eta_vec. So it may require
+    some checking.
     """
-    Takes triplets of angles in the beam frame (2*theta, eta, omega)
-    to components of unit G-vectors in the LAB frame.  If the omega
-    values are not trivial (i.e. angs[:, 2] = 0.), then the components
-    are in the SAMPLE frame.  If the crystal rmat is specified and
-    is not the identity, then the components are in the CRYSTAL frame.
-    """
+    # apply defaults to beam_vec and eta_vec:
+    beam_vec = beam_vec if beam_vec is not None else cnst.beam_vec
+    eta_vec = eta_vec if eta_vec is not None else cnst.beam_vec
+
     angs = np.atleast_2d(angs)
     nvecs, dim = angs.shape
 
     # make vectors in beam frame
-    gvec_b = np.empty((nvecs, 3))
-    _angles_to_gvec_helper(angs, gvec_b)
+    gvec_b = _angles_to_gvec_helper(angs)
+
+
 
     # for NUMBA case, need chi as a flaot
     if chi is None:
         chi = 0.
 
-    # calcuate rmat_s
+    # calculate rmat_s
     if dim > 2:
         rmat_s = np.empty((nvecs, 3, 3))
         _rmat_s_helper(chi, angs[:, 2], rmat_s)
     else:  # no omegas given
         rmat_s = np.empty((1, 3, 3))
         _rmat_s_helper(chi, [0., ], rmat_s)
-    return _beam_to_crystal(
-        gvec_b, rmat_b=rmat_b, rmat_s=rmat_s, rmat_c=rmat_c
-        )
+
+    rmat_b = make_beam_rmat(beam_vec, eta_vec)
+    out = _beam_to_crystal(gvec_b,
+                           rmat_b=rmat_b, rmat_s=rmat_s, rmat_c=rmat_c)
+    return out
 
 
 def angles_to_dvec(angs, rmat_b=None, chi=None, rmat_c=None):
@@ -336,44 +357,55 @@ def make_rmat_of_expmap(exp_map):
     return np.squeeze(rmats)
 
 
-@numba.njit
-def _make_beam_rmat(bhat_l, ehat_l, out):
+@xf_api
+@xfapi_jit
+def make_beam_rmat(bvec_l, evec_l):
     # bhat_l and ehat_l CANNOT have 0 magnitude!
     # must catch this case as well as colinear bhat_l/ehat_l elsewhere...
-    bHat_mag = np.sqrt(bhat_l[0]**2 + bhat_l[1]**2 + bhat_l[2]**2)
+
+    bvec_mag = np.sqrt(bvec_l[0]**2 + bvec_l[1]**2 + bvec_l[2]**2)
+
+    if bvec_mag < cnst.sqrt_epsf:
+        #can numba raise?
+        # raise RuntimeError("beam_vec MUST NOT be ZERO!")
+        pass
 
     # assign Ze as -bhat_l
     for i in range(3):
-        out[i, 2] = -bhat_l[i] / bHat_mag
+        out[i, 2] = -bvec_l[i] / bvec_mag
+    Ze0 = -bvec_l[0] / bvec_mag
+    Ze1 = -bvec_l[1] / bvec_mag
+    Ze2 = -bvec_l[2] / bvec_mag    
 
     # find Ye as Ze ^ ehat_l
-    Ye0 = out[1, 2]*ehat_l[2] - ehat_l[1]*out[2, 2]
-    Ye1 = out[2, 2]*ehat_l[0] - ehat_l[2]*out[0, 2]
-    Ye2 = out[0, 2]*ehat_l[1] - ehat_l[0]*out[1, 2]
+    Ye0 = Ze1*evec_l[2] - evec_l[1]*Ze2
+    Ye1 = Ze2*evec_l[0] - evec_l[2]*Ze0
+    Ye2 = Ze0*evec_l[1] - evec_l[0]*Ze1
 
     Ye_mag = np.sqrt(Ye0**2 + Ye1**2 + Ye2**2)
+    if Ye_mag < cnst.sqrt_epsf:
+        # raise RuntimeError("beam_vec and eta_vec MUST NOT be colinear!")
+        pass
+
+    out = np.empty((3,3)) # numba can now allocate
+    Ye0 /= Ye_mag
+    Ye1 /= Ye_mag
+    Ye2 /= Ye_mag
+
+    # find Xe as Ye ^ Ze
+    Xe0 = Ye1*Ze2 - Ze1*Ye2
+    Xe1 = Ye2*Ze0 - Ze2*Ye0
+    Xe2 = Ye0*Ze1 - Ze0*Ye1
+
 
     out[0, 1] = Ye0 / Ye_mag
     out[1, 1] = Ye1 / Ye_mag
     out[2, 1] = Ye2 / Ye_mag
 
-    # find Xe as Ye ^ Ze
     out[0, 0] = out[1, 1]*out[2, 2] - out[1, 2]*out[2, 1]
     out[1, 0] = out[2, 1]*out[0, 2] - out[2, 2]*out[0, 1]
     out[2, 0] = out[0, 1]*out[1, 2] - out[0, 2]*out[1, 1]
 
+    return out
 
-def make_beam_rmat(bhat_l, ehat_l):
-    """
-    make eta basis COB matrix with beam antiparallel with Z
-
-    takes components from BEAM frame to LAB
-
-    FIXME: NO EXCEPTION HANDLING FOR COLINEAR ARGS IN NUMBA VERSION!
-
-    ???: put checks for non-zero magnitudes and non-colinearity in wrapper?
-    """
-    result = np.empty((3, 3))
-    _make_beam_rmat(bhat_l.reshape(3), ehat_l.reshape(3), result)
-    return result
 
