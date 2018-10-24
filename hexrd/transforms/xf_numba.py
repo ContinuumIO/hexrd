@@ -271,14 +271,19 @@ def angles_to_dvec(angs,
                             rmat_b=rmat_b, rmat_s=rmat_s, rmat_c=rmat_c)
 
 
+# this could be a gufunc... (n)->()
 @numba.njit
-def _row_norm(a, b):
+def _row_norm(a, out=None):
     n, dim = a.shape
+    out = out if out is not None else np.empty(n, dtype=a.dtype)
     for i in range(n):
         nrm = 0.0
         for j in range(dim):
-            nrm += a[i, j]*a[i, j]
-        b[i] = np.sqrt(nrm)
+            x = a[i, j]
+            nrm += x*x
+        out[i] = np.sqrt(nrm)
+
+    return out
 
 
 @numba.njit
@@ -314,14 +319,19 @@ def _unit_vector_multi(a, b):
                 b[i, j] = a[i, j]
 
 
+@xf_api
 def row_norm(a):
     """
-    retrun row-wise norms for a list of vectors
+    return row-wise norms for a list of vectors
     """
+    # TODO: leave this to a PRECONDITION in the xf_api?
+    if len(a.shape)>2:
+        raise RuntimeError(
+            "incorrect shape: arg must be  1-d or 2-d, yours is %d"
+            % (len(a.shape)))
+
     a = np.atleast_2d(a)
-    result = np.empty(len(a))
-    _row_norm(a, result)
-    return result
+    return _row_norm(a, result)
 
 
 def unit_vector(a):
