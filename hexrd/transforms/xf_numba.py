@@ -25,8 +25,22 @@
 # the Free Software Foundation, Inc., 59 Temple Place, Suite 330,
 # Boston, MA 02111-1307 USA or visit <http://www.gnu.org/licenses/>.
 # =============================================================================
-
 # ??? do we want to set np.seterr(invalid='ignore') to avoid nan warnings?
+
+# -*- coding: utf-8 -*-
+"""Tranforms module implementation using numba.
+
+Currently, this implementation contains code for the following functions:
+
+- angles_to_gvec
+- angles_to_dvec
+
+- row_norm
+- unit_vector
+- make_rmat_of_expmap
+- make_beam_rmap
+"""
+
 from __future__ import absolute_import
 
 import numpy as np
