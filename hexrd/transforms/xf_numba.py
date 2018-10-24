@@ -90,19 +90,21 @@ def _beam_to_crystal(vecs, rmat_b=None, rmat_s=None, rmat_c=None):
 
 
 @numba.njit
-def _angles_to_gvec_helper(angs):
+def _angles_to_gvec_helper(angs, out=None):
     """
-    angs are vstacked [2*theta, eta, omega]
+    angs are vstacked [2*theta, eta, omega], although omega is optional
 
     This should be equivalent to the one-liner numpy version:
     out = np.vstack([[np.cos(0.5*angs[:, 0]) * np.cos(angs[:, 1])],
                      [np.cos(0.5*angs[:, 0]) * np.sin(angs[:, 1])],
                      [np.sin(0.5*angs[:, 0])]])
 
-    although much faster,
+    although much faster
     """
-    out = np.empty((nvecs, 3))
-    for i in range(n):
+    _, dim = angs.shape
+    out = out if out is not None else np.empty((dim, 3), dtype=angs.dtype)
+
+    for i in range(len(angs)):
         ca0 = np.cos(0.5*angs[i, 0])
         sa0 = np.sin(0.5*angs[i, 0])
         ca1 = np.cos(angs[i, 1])
@@ -115,16 +117,20 @@ def _angles_to_gvec_helper(angs):
 
 
 @numba.njit
-def _angles_to_dvec_helper(angs, out):
+def _angles_to_dvec_helper(angs, out=None):
     """
-    angs are vstacked [2*theta, eta, omega]
+    angs are vstacked [2*theta, eta, omega], although omega is optional
 
-    dvec_b = np.vstack([[np.sin(angs[:, 0]) * np.cos(angs[:, 1])],
-                        [np.sin(angs[:, 0]) * np.sin(angs[:, 1])],
-                        [-np.cos(angs[:, 0])]])
+    This shoud be equivalent to the one-liner numpy version:
+    out = np.vstack([[np.sin(angs[:, 0]) * np.cos(angs[:, 1])],
+                     [np.sin(angs[:, 0]) * np.sin(angs[:, 1])],
+                     [-np.cos(angs[:, 0])]])
+
+    although much faster
     """
-    n = angs.shape[0]
-    for i in range(n):
+    _, dim = angs.shape
+    out = out if out is not None else np.empty((dim, 3), dtype=angs.dtype)
+    for i in range(len(angs)):
         ca0 = np.cos(angs[i, 0])
         sa0 = np.sin(angs[i, 0])
         ca1 = np.cos(angs[i, 1])
@@ -133,28 +139,71 @@ def _angles_to_dvec_helper(angs, out):
         out[i, 1] = sa0 * sa1
         out[i, 2] = -ca0
 
+    return out
 
 @numba.njit
-def _rmat_s_helper(chi, omes, out):
+def _rmat_s_helper(chi=None, omes=None, out=None):
     """
     simple utility for calculating sample rotation matrices based on
     standard definition for HEDM
+
+    chi is a single value, 0.0 by default
+    omes is either a 1d array or None.
+         If None the code should be equivalent to a single ome of value 0.0
+
+    out is a preallocated output array. No check is done about it having the
+        proper size. If None a new array will be allocated. The expected size
+        of the array is as many 3x3 matrices as omes (n, 3, 3).
     """
-    n = len(omes)
-    cx = np.cos(chi)
-    sx = np.sin(chi)
-    for i in range(n):
-        cw = np.cos(omes[i])
-        sw = np.sin(omes[i])
-        out[i, 0, 0] = cw
-        out[i, 0, 1] = 0.
-        out[i, 0, 2] = sw
-        out[i, 1, 0] = sx * sw
-        out[i, 1, 1] = cx
-        out[i, 1, 2] = -sx * cw
-        out[i, 2, 0] = -cx * sw
-        out[i, 2, 1] = sx
-        out[i, 2, 2] = cx * cw
+    if chi is not None:
+        cx = np.cos(chi)
+        sx = np.sin(chi)
+    else:
+        cx = 1.0
+        sx = 0.0
+
+    if omes is not None:
+        # omes is an array (vector): output is as many rotation matrices as omes entries.
+        n = len(omes)
+        out = out if out is not None else np.empty((n,3,3), dtype=omes.dtype)
+
+        if chi is not None:
+            # ome is array and chi is a value... compute output
+            cx = np.cos(chi)
+            sx = np.sin(chi)
+            for i in range(n):
+                cw = np.cos(omes[i])
+                sw = np.sin(omes[i])
+                out[i, 0, 0] =     cw;  out[i, 0, 1] = 0.;  out[i, 0, 2] =     sw
+                out[i, 1, 0] =  sx*sw;  out[i, 1, 1] = cx;  out[i, 1, 2] = -sx*cw
+                out[i, 2, 0] = -cx*sw;  out[i, 2, 1] = sx;  out[i, 2, 2] =  cx*cw
+        else:
+            # omes is array and chi is None -> equivalent to chi=0.0, but shortcut computations.
+            # cx IS 1.0, sx IS 0.0
+            for i in range(n):
+                cw = np.cos(omes[i])
+                sw = np.sin(omes[i])
+                out[i, 0, 0] =  cw;  out[i, 0, 1] = 0.;  out[i, 0, 2] = sw
+                out[i, 1, 0] =  0.;  out[i, 1, 1] = 1.;  out[i, 1, 2] = 0.
+                out[i, 2, 0] = -sw;  out[i, 2, 1] = 0.;  out[i, 2, 2] = cw
+    else:
+        # omes is None, results should be equivalent to an array with a single element 0.0
+        out = out if out is not None else np.empty((1, 3, 3))
+        if chi is not None:
+            # ome is 0.0. cw is 1.0 and sw is 0.0
+            cx = np.cos(chi)
+            sx = np.sin(chi)
+            out[0, 0, 0] = 1.;  out[0, 0, 1] = 0.;  out[0, 0, 2] =  0.
+            out[0, 1, 0] = 0.;  out[0, 1, 1] = cx;  out[0, 1, 2] = -sx
+            out[0, 2, 0] = 0.;  out[0, 2, 1] = sx;  out[0, 2, 2] =  cx
+        else:
+            # both omes and chi are None... return a single identity matrix.
+            out[0, 0, 0] = 1.;  out[0, 0, 1] = 0.;  out[0, 0, 2] = 0.
+            out[0, 1, 0] = 0.;  out[0, 1, 1] = 1.;  out[0, 1, 2] = 0.
+            out[0, 2, 0] = 0.;  out[0, 2, 1] = 0.;  out[0, 2, 2] = 1.
+
+
+    return out
 
 
 @xf_api
@@ -165,65 +214,61 @@ def angles_to_gvec(angs,
     This used to take rmat_b instead of the pair beam_vec, eta_vec. So it may require
     some checking.
     """
-    # apply defaults to beam_vec and eta_vec:
-    beam_vec = beam_vec if beam_vec is not None else cnst.beam_vec
-    eta_vec = eta_vec if eta_vec is not None else cnst.beam_vec
-
     angs = np.atleast_2d(angs)
     nvecs, dim = angs.shape
 
     # make vectors in beam frame
-    gvec_b = _angles_to_gvec_helper(angs)
+    gvec_b = _angles_to_gvec_helper(angs[:,0:2])
 
+    # _rmat_s_helper could return None to mean "Identity" when chi and ome are None.
+    omes = angs[:, 2] if dim>2 else None
+    if chi is not None or omes is not None:
+        rmat_s = _rmat_s_helper(chi=chi, omes=omes)
+    else:
+        rmat_s = None
 
-
-    # for NUMBA case, need chi as a flaot
-    if chi is None:
-        chi = 0.
-
-    # calculate rmat_s
-    if dim > 2:
-        rmat_s = np.empty((nvecs, 3, 3))
-        _rmat_s_helper(chi, angs[:, 2], rmat_s)
-    else:  # no omegas given
-        rmat_s = np.empty((1, 3, 3))
-        _rmat_s_helper(chi, [0., ], rmat_s)
-
+    # apply defaults to beam_vec and eta_vec.
+    # TODO: use a default rmat when beam_vec and eta_vec are None so computations
+    #       can be avoided?
+    beam_vec = beam_vec if beam_vec is not None else cnst.beam_vec
+    eta_vec = eta_vec if eta_vec is not None else cnst.beam_vec
     rmat_b = make_beam_rmat(beam_vec, eta_vec)
+
     out = _beam_to_crystal(gvec_b,
                            rmat_b=rmat_b, rmat_s=rmat_s, rmat_c=rmat_c)
     return out
 
 
-def angles_to_dvec(angs, rmat_b=None, chi=None, rmat_c=None):
-    """
-    Takes triplets of angles in the beam frame (2*theta, eta, omega)
-    to components of unit diffraction vectors in the LAB frame.  If the
-    omega values are not trivial (i.e. angs[:, 2] = 0.), then the
-    components are in the SAMPLE frame.  If the crystal rmat is specified
-    and is not the identity, then the components are in the CRYSTAL frame.
+@xf_api
+def angles_to_dvec(angs,
+                   beam_vec=None, eta_vec=None,
+                   chi=None, rmat_c=None):
+    """Note about this implementation:
+    This used to take rmat_b instead of the pair beam_vec, eta_vec. So it may require
+    some checking.
     """
     angs = np.atleast_2d(angs)
     nvecs, dim = angs.shape
 
     # make vectors in beam frame
-    dvec_b = np.empty((nvecs, 3))
-    _angles_to_dvec_helper(angs, dvec_b)
+    dvec_b = _angles_to_dvec_helper(angs[:,0:2])
 
-    # for NUMBA case, need chi as a flaot
-    if chi is None:
-        chi = 0.
+    # calculate rmat_s
+    omes = angs[:, 2] if dim>2 else None
+    if chi is not None or omes is not None:
+        rmat_s = _rmat_s_helper(chi=chi, omes=omes)
+    else:
+        rmat_s = None
 
-    # calcuate rmat_s
-    if dim > 2:
-        rmat_s = np.empty((nvecs, 3, 3))
-        _rmat_s_helper(chi, angs[:, 2], rmat_s)
-    else:  # no omegas given
-        rmat_s = np.empty((1, 3, 3))
-        _rmat_s_helper(chi, [0., ], rmat_s)
-    return _beam_to_crystal(
-        dvec_b, rmat_b=rmat_b, rmat_s=rmat_s, rmat_c=rmat_c
-        )
+    # apply defaults to beam_vec and eta_vec.
+    # TODO: use a default rmat when beam_vec and eta_vec are None so computations
+    #       can be avoided?
+    beam_vec = beam_vec if beam_vec is not None else cnst.beam_vec
+    eta_vec = eta_vec if eta_vec is not None else cnst.beam_vec
+    rmat_b = make_beam_rmat(beam_vec, eta_vec)
+
+    return _beam_to_crystal(dvec_b,
+                            rmat_b=rmat_b, rmat_s=rmat_s, rmat_c=rmat_c)
 
 
 @numba.njit
