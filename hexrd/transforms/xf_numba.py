@@ -286,8 +286,11 @@ def _row_norm(a, out=None):
     return out
 
 
+# this and _unit_vector_single would be better as a gufunc.
 @numba.njit
-def _unit_vector_single(a, b):
+def _unit_vector_single(a, out=None):
+    out = out if out is not None else np.empty_like(a)
+
     n = len(a)
     nrm = 0.0
     for i in range(n):
@@ -296,14 +299,17 @@ def _unit_vector_single(a, b):
     # prevent divide by zero
     if nrm > cnst.epsf:
         for i in range(n):
-            b[i] = a[i] / nrm
+            out[i] = a[i] / nrm
     else:
         for i in range(n):
-            b[i] = a[i]
+            out[i] = a[i]
 
+    return out
 
 @numba.njit
-def _unit_vector_multi(a, b):
+def _unit_vector_multi(a, out=None):
+    out = out if out is not None else np.empty_like(a)
+
     n, dim = a.shape
     for i in range(n):
         nrm = 0.0
@@ -313,11 +319,12 @@ def _unit_vector_multi(a, b):
         # prevent divide by zero
         if nrm > cnst.epsf:
             for i in range(n):
-                b[i, j] = a[i, j] / nrm
+                out[i, j] = a[i, j] / nrm
         else:
             for i in range(n):
-                b[i, j] = a[i, j]
+                out[i, j] = a[i, j]
 
+    return out
 
 @xf_api
 def row_norm(a):
@@ -331,28 +338,27 @@ def row_norm(a):
             % (len(a.shape)))
 
     a = np.atleast_2d(a)
-    return _row_norm(a, result)
+    return _row_norm(a)
 
-
-def unit_vector(a):
+@xf_api
+def unit_vector(vec_in):
     """
     normalize array of column vectors (hstacked, axis = 0)
     """
-    result = np.empty_like(a)
-    if a.ndim == 1:
-        _unit_vector_single(a, result)
-    elif a.ndim == 2:
-        _unit_vector_multi(a, result)
+    if vec_in.ndim == 1:
+        out = _unit_vector_single(vec_in)
+    elif vec_in.ndim == 2:
+        out = _unit_vector_multi(vec_in)
     else:
         raise ValueError(
             "incorrect arg shape; must be 1-d or 2-d, yours is %d-d"
-            % (a.ndim)
+            % (vec_in.ndim)
         )
-    return result
+    return out
 
 
 @numba.njit
-def _make_rmat_of_expmap(x, z):
+def _make_rmat_of_expmap(x, out=None):
     """
     TODO:
 
@@ -362,31 +368,31 @@ def _make_rmat_of_expmap(x, z):
        for the phi = 0 cases, and deal with it later; or
     2) catch phi = 0 cases inside the loop and just return squeezed answer
     """
-    n = x.shape[0]
+    n = len(x)
+    out = out if out is not None else np.empty((n,3,3), dtype=x.dtype)
     for i in range(n):
         phi = np.sqrt(x[i, 0]*x[i, 0] + x[i, 1]*x[i, 1] + x[i, 2]*x[i, 2])
         if phi <= cnst.sqrt_epsf:
-            z[i, 0, 0] = 1.
-            z[i, 0, 1] = 0.
-            z[i, 0, 2] = 0.
-            z[i, 1, 0] = 0.
-            z[i, 1, 1] = 1.
-            z[i, 1, 2] = 0.
-            z[i, 2, 0] = 0.
-            z[i, 2, 1] = 0.
-            z[i, 2, 2] = 1.
+            out[i, 0, 0] = 1.;  out[i, 0, 1] = 0.;  out[i, 0, 2] = 0.
+            out[i, 1, 0] = 0.;  out[i, 1, 1] = 1.;  out[i, 1, 2] = 0.
+            out[i, 2, 0] = 0.;  out[i, 2, 1] = 0.;  out[i, 2, 2] = 1.
         else:
             f1 = np.sin(phi)/phi
             f2 = (1. - np.cos(phi)) / (phi*phi)
-            z[i, 0, 0] = 1. - f2*(x[i, 2]*x[i, 2] + x[i, 1]*x[i, 1])
-            z[i, 0, 1] = f2*x[i, 1]*x[i, 0] - f1*x[i, 2]
-            z[i, 0, 2] = f1*x[i, 1] + f2*x[i, 2]*x[i, 0]
-            z[i, 1, 0] = f1*x[i, 2] + f2*x[i, 1]*x[i, 0]
-            z[i, 1, 1] = 1. - f2*(x[i, 2]*x[i, 2] + x[i, 0]*x[i, 0])
-            z[i, 1, 2] = f2*x[i, 2]*x[i, 1] - f1*x[i, 0]
-            z[i, 2, 0] = f2*x[i, 2]*x[i, 0] - f1*x[i, 1]
-            z[i, 2, 1] = f1*x[i, 0] + f2*x[i, 2]*x[i, 1]
-            z[i, 2, 2] = 1. - f2*(x[i, 1]*x[i, 1] + x[i, 0]*x[i, 0])
+
+            out[i, 0, 0] = 1. - f2*(x[i, 2]*x[i, 2] + x[i, 1]*x[i, 1])
+            out[i, 0, 1] = f2*x[i, 1]*x[i, 0] - f1*x[i, 2]
+            out[i, 0, 2] = f1*x[i, 1] + f2*x[i, 2]*x[i, 0]
+
+            out[i, 1, 0] = f1*x[i, 2] + f2*x[i, 1]*x[i, 0]
+            out[i, 1, 1] = 1. - f2*(x[i, 2]*x[i, 2] + x[i, 0]*x[i, 0])
+            out[i, 1, 2] = f2*x[i, 2]*x[i, 1] - f1*x[i, 0]
+
+            out[i, 2, 0] = f2*x[i, 2]*x[i, 0] - f1*x[i, 1]
+            out[i, 2, 1] = f1*x[i, 0] + f2*x[i, 2]*x[i, 1]
+            out[i, 2, 2] = 1. - f2*(x[i, 1]*x[i, 1] + x[i, 0]*x[i, 0])
+
+    return out
 
 
 """
@@ -404,11 +410,10 @@ def make_rmat_of_expmap(exp_map):
     return rmats
 """
 
-
+@xf_api
 def make_rmat_of_expmap(exp_map):
     exp_map = np.atleast_2d(exp_map)
-    rmats = np.empty((len(exp_map), 3, 3))
-    _make_rmat_of_expmap(exp_map, rmats)
+    rmats = _make_rmat_of_expmap(exp_map)
     return np.squeeze(rmats)
 
 
