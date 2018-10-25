@@ -884,10 +884,11 @@ static PyObject * makeBinaryRotMat(PyObject * self, PyObject * args)
 
 static PyObject * makeEtaFrameRotMat(PyObject * self, PyObject * args)
 {
-  PyArrayObject *bHat, *eHat, *rMat;
+  PyArrayObject *bHat, *eHat, *rMat=NULL;
   int db, de;
   npy_intp nb, ne, dims[2];
   double *bPtr, *ePtr, *rPtr;
+  int errcode;
 
   /* Parse arguments */
   if ( !PyArg_ParseTuple(args,"OO", &bHat,&eHat)) return(NULL);
@@ -907,15 +908,35 @@ static PyObject * makeEtaFrameRotMat(PyObject * self, PyObject * args)
   dims[0] = 3; dims[1] = 3;
   rMat = (PyArrayObject*)PyArray_EMPTY(2,dims,NPY_DOUBLE,0);
 
+  if (rMat == NULL)
+      goto fail;
+
   /* Grab pointers to the various data arrays */
   bPtr = (double*)PyArray_DATA(bHat);
   ePtr = (double*)PyArray_DATA(eHat);
   rPtr = (double*)PyArray_DATA(rMat);
 
   /* Call the actual function */
-  makeEtaFrameRotMat_cfunc(bPtr,ePtr,rPtr);
+  errcode = makeEtaFrameRotMat_cfunc(bPtr, ePtr, rPtr);
 
-  return((PyObject*)rMat);
+  if (errcode == 0) {
+      /* No error, return the matrix */
+      return((PyObject*)rMat);
+  } /* else ... fall back to fail code, but generating the appropriate error before */
+
+  switch (errcode) {
+  case TF_MAKE_BEAM_RMAT_ERR_BEAM_ZERO: /* beam vec is zero (within an epsilon) */
+      PyErr_SetString(PyExc_RuntimeError, "bvec_l MUST NOT be ZERO!");
+      break;
+  case TF_MAKE_BEAM_RMAT_ERR_COLLINEAR: /* beam vec and eta vec are collinear */
+      PyErr_SetString(PyExc_RuntimeError, "bvec_l and evec_l MUST NOT be collinear!");
+      break;
+  }
+
+ fail:
+  /* Free the array if allocated, since it won't be returned */
+  Py_XDECREF(rMat);
+  return NULL;
 }
 
 static PyObject * validateAngleRanges(PyObject * self, PyObject * args)

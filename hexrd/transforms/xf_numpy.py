@@ -633,7 +633,7 @@ def make_beam_rmat(bvec_l, evec_l):
     # find Ye as cross(ehat_l, bhat_l), normalize if kosher
     Ye = np.cross(ehat_l, bhat_l)
     if np.sqrt(np.sum(Ye*Ye)) < cnst.sqrt_epsf:
-        raise RuntimeError("bhat_l and ehat_l must NOT be colinear!")
+        raise RuntimeError("bvec_l and evec_l must NOT be colinear!")
     Ye = unit_vector(Ye)
 
     # find Xe as cross(bhat_l, Ye)

@@ -439,7 +439,7 @@ def make_beam_rmat(bvec_l, evec_l):
     bvec_mag = np.sqrt(bvec_l[0]**2 + bvec_l[1]**2 + bvec_l[2]**2)
 
     if bvec_mag < cnst.sqrt_epsf:
-        raise RuntimeError("beam_vec MUST NOT be ZERO!")
+        raise RuntimeError("bvec_l MUST NOT be ZERO!")
         pass
 
     # assign Ze as -bhat_l
@@ -454,7 +454,7 @@ def make_beam_rmat(bvec_l, evec_l):
 
     Ye_mag = np.sqrt(Ye0**2 + Ye1**2 + Ye2**2)
     if Ye_mag < cnst.sqrt_epsf:
-        raise RuntimeError("beam_vec and eta_vec MUST NOT be colinear!")
+        raise RuntimeError("bvec_l and evec_l MUST NOT be collinear!")
         pass
 
     out = np.empty((3,3), dtype=bvec_l.dtype)

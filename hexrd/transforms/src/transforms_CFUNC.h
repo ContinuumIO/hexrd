@@ -61,7 +61,8 @@ void oscillAnglesOfHKLs_cfunc(long int npts, double * hkls, double chi,
 /******************************************************************************/
 /* Utility Funtions */
 
-void unitRowVector_cfunc(int n, double * cIn, double * cOut);
+int 
+unitRowVector_cfunc(int n, double * cIn, double * cOut);
 
 void unitRowVectors_cfunc(int m, int n, double * cIn, double * cOut);
 
@@ -75,7 +76,11 @@ void makeRotMatOfQuat_cfunc(int nq, double * qPtr, double * rPtr);
 
 void makeBinaryRotMat_cfunc(double * aPtr, double * rPtr);
 
-void makeEtaFrameRotMat_cfunc(double * bPtr, double * ePtr, double * rPtr);
+
+#define TF_MAKE_BEAM_RMAT_ERR_BEAM_ZERO 1
+#define TF_MAKE_BEAM_RMAT_ERR_COLLINEAR 2
+int 
+makeEtaFrameRotMat_cfunc(double * bPtr, double * ePtr, double * rPtr);
 
 void validateAngleRanges_cfunc(int na, double * aPtr, int nr, double * minPtr, double * maxPtr, bool * rPtr, int ccw);
 

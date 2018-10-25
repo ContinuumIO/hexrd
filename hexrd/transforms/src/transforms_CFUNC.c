@@ -562,7 +562,10 @@ void oscillAnglesOfHKLs_cfunc(long int npts, double * hkls, double chi,
 /******************************************************************************/
 /* Utility Funtions */
 
-void unitRowVector_cfunc(int n, double * cIn, double * cOut)
+/* Stores normalized cIn into Cout. Cin and Cout being vectors of n elements
+ * returns 0 if normalization was possible, 1 if the normalization wasn't
+ */
+int unitRowVector_cfunc(int n, double * cIn, double * cOut)
 {
   int j;
   double nrm;
@@ -576,10 +579,12 @@ void unitRowVector_cfunc(int n, double * cIn, double * cOut)
     for (j=0; j<n; j++) {
       cOut[j] = cIn[j]/nrm;
     }
+    return 0;
   } else {
     for (j=0; j<n; j++) {
       cOut[j] = cIn[j];
     }
+    return 1;
   }
 }
 
@@ -723,25 +728,40 @@ void makeBinaryRotMat_cfunc(double * aPtr, double * rPtr)
   }
 }
 
-void makeEtaFrameRotMat_cfunc(double * bPtr, double * ePtr, double * rPtr)
+int 
+makeEtaFrameRotMat_cfunc(double * bPtr, double * ePtr, double * rPtr)
 {
   /*
    * This function generates a COB matrix that takes components in the
    * BEAM frame to LAB frame
    *
    * NOTE: the beam and eta vectors MUST NOT BE COLINEAR!!!!
+   * 
+   * Added a return value acting as an error code. Possible values are:
+   * 0 - No error
+   * 1 - beam vector is zero within an epsilon
+   * 2 - beam and eta vectors are collinear.
    */
-  int i;
+  int i, err;
   double yPtr[3], bHat[3], yHat[3], xHat[3];
+
+  err = unitRowVector_cfunc(3, bPtr, bHat);
+  if (0 != err) {
+      /* can't normalize beam vector due to being zero */
+      return TF_MAKE_BEAM_RMAT_ERR_BEAM_ZERO;
+  }
 
   /* find Y as e ^ b */
   yPtr[0] = ePtr[1]*bPtr[2] - bPtr[1]*ePtr[2];
   yPtr[1] = ePtr[2]*bPtr[0] - bPtr[2]*ePtr[0];
   yPtr[2] = ePtr[0]*bPtr[1] - bPtr[0]*ePtr[1];
 
-  /* Normalize beam (-Z) and Y vectors */
-  unitRowVector_cfunc(3,bPtr,bHat);
-  unitRowVector_cfunc(3,yPtr,yHat);
+  /* Normalize e ^ b */
+  err = unitRowVector_cfunc(3,yPtr,yHat);
+  if (0 != err) {
+      /* e ^ b is close to zero... eta and beam are collinear... */
+      return TF_MAKE_BEAM_RMAT_ERR_COLLINEAR;
+  }
 
   /* Find X as b ^ Y */
   xHat[0] = bHat[1]*yHat[2] - yHat[1]*bHat[2];
@@ -754,6 +774,8 @@ void makeEtaFrameRotMat_cfunc(double * bPtr, double * ePtr, double * rPtr)
     rPtr[3*i+1] = yHat[i];
     rPtr[3*i+2] = -bHat[i];
   }
+
+  return 0; /* no error */
 }
 
 void validateAngleRanges_old_cfunc(int na, double * aPtr, int nr, double * minPtr, double * maxPtr, bool * rPtr)
