@@ -38,7 +38,7 @@ Currently, this implementation contains code for the following functions:
 - row_norm
 - unit_vector
 - make_rmat_of_expmap
-- make_beam_rmap
+- make_beam_rmat
 """
 
 from __future__ import absolute_import
@@ -434,19 +434,15 @@ def make_rmat_of_expmap(exp_map):
 @xf_api
 @xfapi_jit
 def make_beam_rmat(bvec_l, evec_l):
-    # bhat_l and ehat_l CANNOT have 0 magnitude!
+    # bvec_l and evec_l CANNOT have 0 magnitude!
     # must catch this case as well as colinear bhat_l/ehat_l elsewhere...
-
     bvec_mag = np.sqrt(bvec_l[0]**2 + bvec_l[1]**2 + bvec_l[2]**2)
 
     if bvec_mag < cnst.sqrt_epsf:
-        #can numba raise?
-        # raise RuntimeError("beam_vec MUST NOT be ZERO!")
+        raise RuntimeError("beam_vec MUST NOT be ZERO!")
         pass
 
     # assign Ze as -bhat_l
-    for i in range(3):
-        out[i, 2] = -bvec_l[i] / bvec_mag
     Ze0 = -bvec_l[0] / bvec_mag
     Ze1 = -bvec_l[1] / bvec_mag
     Ze2 = -bvec_l[2] / bvec_mag    
@@ -458,10 +454,10 @@ def make_beam_rmat(bvec_l, evec_l):
 
     Ye_mag = np.sqrt(Ye0**2 + Ye1**2 + Ye2**2)
     if Ye_mag < cnst.sqrt_epsf:
-        # raise RuntimeError("beam_vec and eta_vec MUST NOT be colinear!")
+        raise RuntimeError("beam_vec and eta_vec MUST NOT be colinear!")
         pass
 
-    out = np.empty((3,3)) # numba can now allocate
+    out = np.empty((3,3), dtype=bvec_l.dtype)
     Ye0 /= Ye_mag
     Ye1 /= Ye_mag
     Ye2 /= Ye_mag
@@ -472,13 +468,17 @@ def make_beam_rmat(bvec_l, evec_l):
     Xe2 = Ye0*Ze1 - Ze0*Ye1
 
 
-    out[0, 1] = Ye0 / Ye_mag
-    out[1, 1] = Ye1 / Ye_mag
-    out[2, 1] = Ye2 / Ye_mag
+    out[0, 0] = Xe0
+    out[0, 1] = Ye0
+    out[0, 2] = Ze0
 
-    out[0, 0] = out[1, 1]*out[2, 2] - out[1, 2]*out[2, 1]
-    out[1, 0] = out[2, 1]*out[0, 2] - out[2, 2]*out[0, 1]
-    out[2, 0] = out[0, 1]*out[1, 2] - out[0, 2]*out[1, 1]
+    out[1, 0] = Xe1
+    out[1, 1] = Ye1
+    out[1, 2] = Ze1
+
+    out[2, 0] = Xe2
+    out[2, 1] = Ye2
+    out[2, 2] = Ze2
 
     return out
 

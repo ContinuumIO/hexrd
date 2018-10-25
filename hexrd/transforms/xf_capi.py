@@ -27,6 +27,7 @@ from __future__ import absolute_import, print_function, division
 from hexrd import constants as cnst
 from .. import _transforms_CAPI
 from .transforms_definitions import xf_api
+import numpy as np
 
 @xf_api
 def angles_to_gvec(
@@ -209,8 +210,8 @@ def make_binary_rmat(axis):
 
 @xf_api
 def make_beam_rmat(bvec_l, evec_l):
-    arg1 = np.ascontiguousarray(bHat_l.flatten())
-    arg2 = np.ascontiguousarray(eHat_l.flatten())
+    arg1 = np.ascontiguousarray(bvec_l.flatten())
+    arg2 = np.ascontiguousarray(evec_l.flatten())
     return _transforms_CAPI.makeEtaFrameRotMat(arg1, arg2)
 
 

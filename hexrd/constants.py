@@ -66,6 +66,9 @@ zeros_3x1 = np.zeros((3, 1))
 zeros_6x1 = np.zeros((6, 1))
 
 # reference beam direction and eta=0 ref in LAB FRAME for standard geometry
+# WARNING: In some parts of the code it is assumed that the beam rotation
+#          matrix is assumed to be the identity when using the standard
+#          beam_vec and eta_vec. If this changes code must be reviewed!
 beam_vec = -lab_z
 eta_vec = lab_x
 
