@@ -49,3 +49,50 @@ def test_zero_beam_vec(make_beam_rmat_impl, module_name):
 def test_colinear_beam_eta_vec(make_beam_rmat_impl, module_name):
     with pytest.raises(RuntimeError):
         make_beam_rmat_impl(cnst.beam_vec, cnst.beam_vec)
+
+
+@all_impls
+def test_orthonormal_1(make_beam_rmat_impl, module_name):
+    beam_vec = np.array([1.0, 2.0, 3.0])
+    other_vec = np.array([5.0, 2.0, 1.0])
+
+    # force both inputs to be orthogonal and normalized
+    eta_vec = np.cross(beam_vec, other_vec)
+
+    beam_vec /= np.linalg.norm(beam_vec)
+    eta_vec /= np.linalg.norm(eta_vec)
+
+    rmat = make_beam_rmat_impl(beam_vec, eta_vec)
+
+    # dot(A, A.T) == Identity seems a good orthonormality check
+    # Note: atol needed as rtol is not useful for '0.' entries.
+    assert_allclose(np.dot(rmat, rmat.T), cnst.identity_3x3, atol=1e+10)
+
+
+@all_impls
+def test_orthonormal_2(make_beam_rmat_impl, module_name):
+    # same as above although the inputs are not normalized
+    beam_vec = np.array([1.0, 2.0, 3.0])
+    other_vec = np.array([5.0, 2.0, 1.0])
+
+    # force both inputs to be orthogonal
+    eta_vec = np.cross(beam_vec, other_vec)
+
+    rmat = make_beam_rmat_impl(beam_vec, eta_vec)
+
+    # dot(A, A.T) == Identity seems a good orthonormality check
+    # Note: atol needed as rtol is not useful for '0.' entries.
+    assert_allclose(np.dot(rmat, rmat.T), cnst.identity_3x3, atol=1e+10)
+
+
+@all_impls
+def test_orthonormal_3(make_beam_rmat_impl, module_name):
+    # same as above although the inputs are neither normalized nor orthogonal
+    beam_vec = np.array([1.0, 2.0, 3.0])
+    other_vec = np.array([5.0, 2.0, 1.0])
+
+    rmat = make_beam_rmat_impl(beam_vec, other_vec)
+
+    # dot(A, A.T) == Identity seems a good orthonormality check
+    # Note: atol needed as rtol is not useful for '0.' entries.
+    assert_allclose(np.dot(rmat, rmat.T), cnst.identity_3x3, atol=1e+10)
