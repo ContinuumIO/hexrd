@@ -52,3 +52,20 @@ def test_2pi_expmap(make_rmat_of_expmap_impl, module_name):
     rmat = make_rmat_of_expmap_impl(np.array([0., 0.,2*np.pi]))
     assert_allclose(rmat, cnst.identity_3x3, atol=ATOL_IDENTITY)
 
+
+# ------------------------------------------------------------------------------
+
+# check that for some random inputs the resulting matrix is orthogonal
+
+@all_impls
+def test_orthonormal(make_rmat_of_expmap_impl, module_name):
+    rmat = make_rmat_of_expmap_impl(np.array([42.0, 3., 32.5]))
+    # dot(A, A.T) == IDENTITY is a good orthonormality check
+    assert_allclose(np.dot(rmat, rmat.T), cnst.identity_3x3,
+                     atol=ATOL_IDENTITY)
+
+    rmat = make_rmat_of_expmap_impl(np.array([-32.0, 0.0, 17.6]))
+    assert_allclose(np.dot(rmat, rmat.T), cnst.identity_3x3,
+                     atol=ATOL_IDENTITY)
+
+
