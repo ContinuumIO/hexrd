@@ -83,3 +83,21 @@ def test_random_vectors(unit_vector_impl, module_name):
 
     # all in a row
     assert_allclose(np.linalg.norm(unit_vector_impl(vecs), axis=1), expected_norm)
+
+
+# ------------------------------------------------------------------------------
+
+# check input ordering
+
+@all_impls
+def test_strided_inputs(unit_vector_impl, module_name):
+    vecs, expected_norm = _get_random_vectors_array()
+
+    vecs_f = np.asfortranarray(vecs)
+
+    # element by element
+    for i in range(len(vecs_f)):
+        assert_allclose(np.linalg.norm(unit_vector_impl(vecs_f[i])), expected_norm[i])
+
+    # all in a row
+    assert_allclose(np.linalg.norm(unit_vector_impl(vecs_f), axis=1), expected_norm)
