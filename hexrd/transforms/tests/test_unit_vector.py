@@ -20,6 +20,16 @@ all_impls = pytest.mark.parametrize('unit_vector_impl, module_name',
                                 )
 
 
+def _get_random_vectors_array():
+    # return a (n,3) array with some vectors and a (n) array with the expected
+    # result norms.
+    arr = np.array([[42.0,  0.0,  0.0, 1.0],
+                    [12.0, 12.0, 12.0, 1.0],
+                    [ 0.0,  0.0,  0.0, 0.0],
+                    [ 0.7, -0.7,  0.0, 1.0],
+                    [-0.0, -0.0, -0.0, 0.0]])
+    return arr[:,0:3], arr[:,3]
+
 
 # ------------------------------------------------------------------------------
 
@@ -58,3 +68,18 @@ def test_zero(unit_vector_impl, module_name):
     mix_arr = np.eye(3)
     mix_arr[1,:] = 0.0
     assert_allclose(unit_vector_impl(mix_arr), mix_arr)
+
+
+@all_impls
+def test_random_vectors(unit_vector_impl, module_name):
+    # test for some random vectors. The test just checks that the norm of the
+    # the resulting vector is as expected.
+
+    vecs, expected_norm = _get_random_vectors_array()
+
+    # element by element
+    for i in range(len(vecs)):
+        assert_allclose(np.linalg.norm(unit_vector_impl(vecs[i])), expected_norm[i])
+
+    # all in a row
+    assert_allclose(np.linalg.norm(unit_vector_impl(vecs), axis=1), expected_norm)
