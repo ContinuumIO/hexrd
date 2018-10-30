@@ -69,3 +69,20 @@ def test_orthonormal(make_rmat_of_expmap_impl, module_name):
                      atol=ATOL_IDENTITY)
 
 
+
+# ------------------------------------------------------------------------------
+
+# Test strided input
+@all_impls
+def test_strided(make_rmat_of_expmap_impl, module_name):
+    exp_map = np.array([42.0, 3., 32.5]) # A random expmap
+
+    buff = np.zeros((3, 3), order='C')
+    buff[:,0] = exp_map[:] # assign the expmap to a column, so it is strided
+
+    result_contiguous = make_rmat_of_expmap_impl(exp_map)
+    result_strided = make_rmat_of_expmap_impl(buff[:,0])
+
+    # in fact, a stricter equality check should work as well,
+    # but anyways...
+    assert_allclose(result_contiguous, result_strided)
