@@ -23,6 +23,8 @@ all_impls = pytest.mark.parametrize('unit_vector_impl, module_name',
 
 # ------------------------------------------------------------------------------
 
+# trivial tests
+
 @all_impls
 def test_trivial(unit_vector_impl, module_name):
     # all vectors in eye(3) are already unit vectors
@@ -37,3 +39,22 @@ def test_trivial(unit_vector_impl, module_name):
     assert_allclose(unit_vector_impl(iden), iden)
 
 
+@all_impls
+def test_zero(unit_vector_impl, module_name):
+    # When a zero vector is given, a potential "division by zero" happens.
+    # in this library, instead of trying to normalize a zero-norm vector
+    # (which would trigger the division by zero), the original vector is
+    # returned.
+
+    # check vector
+    zero_vec = np.zeros((3,))
+    assert_allclose(unit_vector_impl(zero_vec), zero_vec)
+
+    # check array
+    zero_arr = np.zeros((3,3))
+    assert_allclose(unit_vector_impl(zero_arr), zero_arr)
+
+    # check mixed array
+    mix_arr = np.eye(3)
+    mix_arr[1,:] = 0.0
+    assert_allclose(unit_vector_impl(mix_arr), mix_arr)
