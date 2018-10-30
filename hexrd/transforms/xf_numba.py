@@ -332,10 +332,10 @@ def _unit_vector_multi(a, out=None):
         nrm = np.sqrt(nrm)
         # prevent divide by zero
         if nrm > cnst.epsf:
-            for i in range(n):
+            for j in range(n):
                 out[i, j] = a[i, j] / nrm
         else:
-            for i in range(n):
+            for j in range(n):
                 out[i, j] = a[i, j]
 
     return out
@@ -353,6 +353,7 @@ def row_norm(a):
 
     a = np.atleast_2d(a)
     return _row_norm(a)
+
 
 @xf_api
 def unit_vector(vec_in):
